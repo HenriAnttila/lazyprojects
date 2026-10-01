@@ -3,12 +3,14 @@ package tui
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/HenriAnttila/pj/internal/github"
+	"github.com/HenriAnttila/pj/internal/projects"
 )
 
 // Fixed lines around the body: tabs, filter, a rule above and below, key
@@ -103,8 +105,9 @@ func (m *Model) tabs() string {
 		return sDim.Render(label)
 	}
 	left := " " + tab(viewProjects, "Projects") + "   " + tab(viewAdd, "Add")
-	if here := m.opts.Here; here != nil {
-		left += "   " + tab(viewPRs, "PRs · "+here.Slug())
+	if m.view == viewProject {
+		// A breadcrumb, not a tab: the project view sits under Projects.
+		left = " " + sDim.Render("Projects ›") + " " + sActive.Render(m.projName())
 	}
 	right := sDim.Render(tilde(m.opts.Root)) + " "
 	gap := m.width - ansi.StringWidth(left) - ansi.StringWidth(right)
@@ -121,7 +124,7 @@ func (m *Model) filterLine() string {
 		left += sCursor.Render(" ")
 	}
 	count := fmt.Sprintf("%d/%d", len(p.matches), len(p.rows))
-	if m.view == viewPRs && len(m.prs) >= github.PRLimit {
+	if m.view == viewProject && len(m.prs) >= github.PRLimit {
 		count += fmt.Sprintf(" (first %d)", github.PRLimit) // say so rather than silently truncate
 	}
 	right := sDim.Render(count) + " "
@@ -157,15 +160,46 @@ func (m *Model) emptyText() string {
 			return sDim.Render("loading your repos from GitHub…")
 		}
 		return sDim.Render("every repo you can access is already cloned")
-	default:
-		switch {
-		case m.prLoading:
-			return sDim.Render("loading pull requests…")
-		case m.prErr != nil:
-			return sErr.Render("could not list pull requests: " + firstLine(m.prErr.Error()))
-		}
+	}
+	return ""
+}
+
+// projName is how the open project is titled: its path under the root, or its
+// full path when it lives outside it.
+func (m *Model) projName() string {
+	if strings.HasPrefix(m.proj.Rel, "..") || filepath.IsAbs(m.proj.Rel) {
+		return tilde(m.proj.Path)
+	}
+	return m.proj.Rel
+}
+
+// projectInfo is where a project is and what state its working tree is in.
+func (m *Model) projectInfo(p projects.Project, title string) string {
+	remote := "no remote"
+	if p.Host != "" {
+		remote = p.Host + ":" + p.Owner + "/" + p.Name
+	}
+	out := sBold.Render(title) + "\n" + sDim.Render(tilde(p.Path)+"\n"+remote) + "\n\n"
+	if text, ok := m.previews[p.Path]; ok {
+		out += text
+	}
+	return out
+}
+
+// prSummary is the one line under the project view that says where its pull
+// requests stand, since the list itself is never empty.
+func (m *Model) prSummary() string {
+	switch {
+	case !m.proj.IsGitHub():
+		return sDim.Render("not on GitHub, so no pull requests")
+	case m.prLoading:
+		return sDim.Render("loading pull requests…")
+	case m.prErr != nil:
+		return sErr.Render("could not list pull requests: " + firstLine(m.prErr.Error()))
+	case len(m.prs) == 0:
 		return sDim.Render("no open pull requests")
 	}
+	return ""
 }
 
 func (m *Model) previewLines(width, height int) []string {
@@ -189,15 +223,7 @@ func (m *Model) previewText(width int) string {
 	switch m.view {
 	case viewProjects:
 		p, _ := m.project(r.key)
-		b.WriteString(sBold.Render(p.Rel) + "\n")
-		remote := "no remote"
-		if p.Host != "" {
-			remote = p.Host + ":" + p.Owner + "/" + p.Name
-		}
-		b.WriteString(sDim.Render(tilde(p.Path)+"\n"+remote) + "\n\n")
-		if text, ok := m.previews[p.Path]; ok {
-			b.WriteString(text)
-		}
+		b.WriteString(m.projectInfo(p, p.Rel))
 
 	case viewAdd:
 		repo, _ := m.repo(r.key)
@@ -230,7 +256,11 @@ func (m *Model) previewText(width int) string {
 			b.WriteString(m.md.render(readme, width))
 		}
 
-	case viewPRs:
+	case viewProject:
+		if r.key == goKey {
+			b.WriteString(m.projectInfo(m.proj, m.projName()))
+			break
+		}
 		pr, _ := m.pr(r.key)
 		b.WriteString(sBold.Render(ansi.Wordwrap(fmt.Sprintf("#%d %s", pr.Number, pr.Title), width, "")) + "\n")
 		facts := []string{pr.Author, pr.Head + " → " + pr.Base}
@@ -290,11 +320,15 @@ func (m *Model) hints() string {
 	case m.prompt != nil:
 		keys = []string{"enter clone", "tab next container", "esc cancel"}
 	case m.view == viewProjects:
-		keys = []string{"enter go", "tab next view", "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc quit"}
+		keys = []string{"enter open", "tab add", "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc quit"}
 	case m.view == viewAdd:
-		keys = []string{"enter clone", "tab next view", "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc quit"}
+		keys = []string{"enter clone", "tab projects", "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc quit"}
 	default:
-		keys = []string{"enter checkout", "tab next view", "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc quit"}
+		enter := "enter check out"
+		if m.cur().selectedKey() == goKey {
+			enter = "enter go there"
+		}
+		keys = []string{enter, "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc projects"}
 	}
 	return " " + sDim.Render(strings.Join(keys, "   "))
 }
@@ -313,6 +347,8 @@ func (m *Model) statusLine() string {
 		return " " + sErr.Render("refresh failed, showing the cached list: "+firstLine(m.reposErr.Error()))
 	case m.view == viewAdd && m.reposLoading:
 		return " " + sDim.Render("refreshing…")
+	case m.view == viewProject:
+		return " " + m.prSummary()
 	}
 	return ""
 }

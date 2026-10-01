@@ -1,12 +1,14 @@
-// Package tui is the interface: pickers sharing one layout.
+// Package tui is the interface: pickers sharing one layout, in two layers.
 //
-//	Projects  what is on disk under the root      enter: go there
+//	Projects  what is on disk under the root      enter: open the project
 //	Add       GitHub repos not cloned yet         enter: clone, then go there
-//	PRs       open pull requests of the repo the  enter: check out
-//	          shell is in; absent anywhere else
 //
-// Projects and Add are about which project; PRs is about which branch of the
-// one you are already in, which is why it only exists there.
+//	Project   one project: a row to go there,     enter: go / check out
+//	          then its open pull requests
+//
+// The first layer is about which project; the second is about one of them.
+// Launched inside a repo, pj opens straight onto that project, and esc backs
+// out to the list.
 //
 // Typing always filters, as in fzf, so every action is Enter, Tab or a ctrl
 // chord. The model follows Bubble Tea's Elm loop: Update handles one message
@@ -17,7 +19,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -32,8 +33,12 @@ type viewID int
 const (
 	viewProjects viewID = iota
 	viewAdd
-	viewPRs
+	viewProject
 )
+
+// goKey is the project view's first row, the one that goes to the project.
+// Pull request rows are keyed by number, so it cannot collide.
+const goKey = "go"
 
 type Options struct {
 	Root     string
@@ -43,10 +48,11 @@ type Options struct {
 	// CachePath holds the repo list between runs; empty disables the cache.
 	CachePath string
 
-	// Here is the GitHub repo the shell is standing in, or nil. The PR view
-	// exists only when it is set, and lists that repo's pull requests.
+	// Here is the repo the shell is standing in, or nil. When set, pj opens on
+	// that project's view rather than the list.
 	Here *projects.Project
-	// StartAdd opens on the Add view, StartPR on the PR view.
+	// StartAdd opens on the Add view instead. StartPR puts the cursor on the
+	// first pull request once they load, for `pj pr`.
 	StartAdd, StartPR bool
 	// Notice is shown in the status line at launch.
 	Notice string
@@ -70,9 +76,11 @@ type Model struct {
 	reposLoading bool
 	reposErr     error
 
-	prs       []github.PR // of opts.Here
+	proj      projects.Project // the project the project view is showing
+	prs       []github.PR
 	prLoading bool
 	prErr     error
+	prSeq     int
 
 	previews map[string]string // git status and log, by project path
 	readmes  map[string]string // README markdown, by slug; "" means none
@@ -118,10 +126,10 @@ func New(opts Options) *Model {
 	}
 	m.rebuild()
 	switch {
-	case opts.StartPR && opts.Here != nil:
-		m.view = viewPRs
 	case opts.StartAdd:
 		m.view = viewAdd
+	case opts.Here != nil:
+		m.open(*opts.Here)
 	}
 	return m
 }
@@ -132,8 +140,7 @@ func (m *Model) Init() tea.Cmd {
 	for _, p := range m.projects {
 		cmds = append(cmds, dirtyCmd(p.Path))
 	}
-	if m.opts.Here != nil {
-		m.prLoading = true
+	if m.view == viewProject {
 		cmds = append(cmds, m.prsCmd())
 	}
 	return tea.Batch(cmds...)
@@ -167,8 +174,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case prsMsg:
+		if msg.seq != m.prSeq {
+			break // an answer for a project the user has already left
+		}
 		m.prLoading, m.prErr, m.prs = false, msg.err, msg.prs
 		m.rebuild()
+		if m.opts.StartPR && m.cur().query == "" && m.cur().cursor == 0 {
+			m.cur().move(1) // `pj pr`: land on the first pull request
+		}
+		m.opts.StartPR = false
 		return m, m.hover()
 
 	case hoverMsg:
@@ -236,10 +250,16 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 	before := m.cur().selectedKey()
 	switch k {
 	case "esc":
-		if m.cur().query == "" {
+		switch {
+		case m.cur().query != "":
+			m.cur().setQuery("")
+		case m.view == viewProject:
+			m.view = viewProjects
+			m.cur().selectKey(m.proj.Path)
+			return m.hover()
+		default:
 			return tea.Quit
 		}
-		m.cur().setQuery("")
 	case "up", "ctrl+p":
 		m.cur().move(-1)
 	case "down", "ctrl+n":
@@ -250,11 +270,8 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 	case "pgdown":
 		m.scroll += m.bodyHeight() / 2
 		return nil
-	case "tab":
-		m.cycle(1)
-		return m.hover()
-	case "shift+tab":
-		m.cycle(-1)
+	case "tab", "shift+tab":
+		m.cycle()
 		return m.hover()
 	case "enter":
 		return m.enter()
@@ -286,15 +303,24 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
-// cycle moves between the views that exist: Projects and Add always, PRs only
-// inside a GitHub repo.
-func (m *Model) cycle(delta int) {
-	views := []viewID{viewProjects, viewAdd}
-	if m.opts.Here != nil {
-		views = append(views, viewPRs)
+// cycle switches between the two lists. The project view is not part of the
+// cycle: it is entered with enter and left with esc.
+func (m *Model) cycle() {
+	switch m.view {
+	case viewProjects:
+		m.view = viewAdd
+	case viewAdd:
+		m.view = viewProjects
 	}
-	i := slices.Index(views, m.view)
-	m.view = views[(i+delta+len(views))%len(views)]
+}
+
+// open shows the project view for p and starts over on its pull requests.
+func (m *Model) open(p projects.Project) {
+	m.view, m.proj = viewProject, p
+	m.prs, m.prErr, m.prLoading = nil, nil, p.IsGitHub()
+	m.prSeq++
+	m.pick[viewProject] = picker{}
+	m.rebuild()
 }
 
 // typed is the text a keypress inserts, or "" for a key that is not text.
@@ -324,15 +350,21 @@ func (m *Model) loadPreview() tea.Cmd {
 	if !ok {
 		return nil
 	}
+	path := ""
 	switch m.view {
 	case viewProjects:
-		if _, ok := m.previews[r.key]; !ok {
-			return previewCmd(r.key)
+		path = r.key
+	case viewProject:
+		if r.key == goKey {
+			path = m.proj.Path
 		}
 	case viewAdd:
 		if _, ok := m.readmes[r.key]; !ok {
 			return m.readmeCmd(r.key)
 		}
+	}
+	if _, ok := m.previews[path]; path != "" && !ok {
+		return previewCmd(path)
 	}
 	return nil
 }
@@ -344,13 +376,19 @@ func (m *Model) enter() tea.Cmd {
 	}
 	switch m.view {
 	case viewProjects:
-		m.Result = r.key
-		return tea.Quit
+		if p, ok := m.project(r.key); ok {
+			m.open(p)
+			return tea.Batch(m.prsCmd(), m.hover())
+		}
 	case viewAdd:
 		m.openPrompt(r.key)
-	case viewPRs:
+	case viewProject:
+		if r.key == goKey {
+			m.Result = m.proj.Path
+			return tea.Quit
+		}
 		if pr, ok := m.pr(r.key); ok {
-			return m.checkout(m.opts.Here.Path, pr.Number)
+			return m.checkout(m.proj.Path, pr.Number)
 		}
 	}
 	return nil
@@ -402,18 +440,22 @@ func (m *Model) browse() tea.Cmd {
 		return nil
 	}
 	switch m.view {
-	case viewProjects:
-		p, _ := m.project(r.key)
-		if !p.IsGitHub() {
-			m.fail(fmt.Errorf("%s has no GitHub remote", p.Rel))
-			return nil
-		}
-		return m.browseCmd("repo", "view", p.Slug(), "--web")
 	case viewAdd:
 		return m.browseCmd("repo", "view", r.key, "--web")
-	default:
-		return m.browseCmd("pr", "view", r.key, "-R", m.opts.Here.Slug(), "--web")
+	case viewProject:
+		if r.key != goKey {
+			return m.browseCmd("pr", "view", r.key, "-R", m.proj.Slug(), "--web")
+		}
 	}
+	p := m.proj
+	if m.view == viewProjects {
+		p, _ = m.project(r.key)
+	}
+	if !p.IsGitHub() {
+		m.fail(fmt.Errorf("%s has no GitHub remote", p.Rel))
+		return nil
+	}
+	return m.browseCmd("repo", "view", p.Slug(), "--web")
 }
 
 func (m *Model) selectedURL() string {
@@ -422,17 +464,22 @@ func (m *Model) selectedURL() string {
 		return ""
 	}
 	switch m.view {
-	case viewProjects:
-		if p, _ := m.project(r.key); p.IsGitHub() {
-			return "https://github.com/" + p.Slug()
-		}
-		return ""
 	case viewAdd:
 		return "https://github.com/" + r.key
-	default:
-		pr, _ := m.pr(r.key)
-		return pr.URL
+	case viewProject:
+		if r.key != goKey {
+			pr, _ := m.pr(r.key)
+			return pr.URL
+		}
 	}
+	p := m.proj
+	if m.view == viewProjects {
+		p, _ = m.project(r.key)
+	}
+	if !p.IsGitHub() {
+		return ""
+	}
+	return "https://github.com/" + p.Slug()
 }
 
 func (m *Model) project(path string) (projects.Project, bool) {
@@ -497,7 +544,8 @@ func (m *Model) rebuild() {
 	}
 	m.pick[viewAdd].setRows(rows)
 
-	rows = make([]row, 0, len(m.prs))
+	rows = make([]row, 0, len(m.prs)+1)
+	rows = append(rows, row{key: goKey, name: "Go to project"})
 	for _, pr := range m.prs {
 		r := row{
 			key:  fmt.Sprint(pr.Number),
@@ -509,7 +557,7 @@ func (m *Model) rebuild() {
 		}
 		rows = append(rows, r)
 	}
-	m.pick[viewPRs].setRows(rows)
+	m.pick[viewProject].setRows(rows)
 }
 
 // within reports whether dir is inside root (or is root).

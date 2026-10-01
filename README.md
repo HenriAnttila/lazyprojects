@@ -1,16 +1,23 @@
 # pj
 
-A project manager for a directory of git repos. The views share one layout
-(filter on top, list left, preview right):
+A project manager for a directory of git repos, in two layers that share one
+layout (filter on top, list left, preview right).
+
+The first layer is about which project:
 
 | View | Shows | Enter |
 |---|---|---|
-| **Projects** | every git repo under the root | go there |
+| **Projects** | every git repo under the root | open that project |
 | **Add** | your GitHub repos that are not cloned yet, last pushed first | clone, then go there |
-| **PRs** | open pull requests of the repo you are in | check out |
 
-Projects and Add are about which project. PRs is about which branch of the one
-you are already in, so it only exists when pj is run inside a GitHub repo.
+The second is one project:
+
+| View | Shows | Enter |
+|---|---|---|
+| **Project** | a "Go to project" row, then its open pull requests | go there / check the PR out |
+
+Run inside a repo, pj opens straight onto that project; esc backs out to the
+list.
 
 Typing always filters. Rows containing what you typed come first in their
 original order; looser fuzzy matches follow.
@@ -52,22 +59,23 @@ Without either, pj prints the path.
 
 ## Commands
 
-    pj            projects
+    pj            the project you are in, or the list when you are not in one
+    pj projects   the list, even from inside a project
     pj add        start on the Add view
-    pj pr         start on the PR view; errors outside a GitHub repo
+    pj pr         the project you are in, cursor on its first pull request
 
 ## Keys
 
 | Key | Action |
 |---|---|
 | type | filter |
-| `enter` | go / clone / check out |
-| `tab` `shift-tab` | next / previous view |
+| `enter` | open / clone / go there / check out |
+| `tab` | switch between Projects and Add |
 | `ctrl-o` | open in the browser |
 | `ctrl-y` | copy the URL |
 | `pgup` `pgdn` | scroll the preview |
 | `ctrl-u` | clear the filter |
-| `esc` | clear the filter, or quit |
+| `esc` | clear the filter, leave the project view, or quit |
 | `ctrl-c` | cancel a running clone or checkout; otherwise quit |
 
 ## Code
@@ -76,4 +84,4 @@ Without either, pj prints the path.
     internal/projects  what is on disk; no UI, no network
     internal/github    repos, PRs and READMEs through gh; no UI
     internal/nav       the cd hand-off
-    internal/tui       Bubble Tea model: one picker component, one per view
+    internal/tui       Bubble Tea model: one picker component, used by every view

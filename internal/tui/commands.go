@@ -30,6 +30,7 @@ type (
 		err   error
 	}
 	prsMsg struct {
+		seq int
 		prs []github.PR
 		err error
 	}
@@ -97,13 +98,18 @@ func (m *Model) reposCmd() tea.Cmd {
 	}
 }
 
+// prsCmd fetches the open project's pull requests; a project that is not on
+// GitHub has none to fetch.
 func (m *Model) prsCmd() tea.Cmd {
-	client, slug := m.opts.Client, m.opts.Here.Slug()
+	if !m.proj.IsGitHub() {
+		return nil
+	}
+	client, slug, seq := m.opts.Client, m.proj.Slug(), m.prSeq
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		prs, err := client.PRs(ctx, slug)
-		return prsMsg{prs, err}
+		return prsMsg{seq, prs, err}
 	}
 }
 

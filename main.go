@@ -19,9 +19,10 @@ import (
 const usage = `usage: pj [flags] [command]
 
 commands:
-  (none)        pick a project under the root and go to it
+  (none)        the project you are in, or the list of projects under the root
+  projects      the list of projects, even from inside one
   add           pick a GitHub repo to clone into the root
-  pr            pick a pull request of the repo you are in and check it out
+  pr            the project you are in, with the cursor on its pull requests
   init <shell>  print the shell function that lets pj change directory
                 (zsh, bash, sh, fish); add  eval "$(pj init zsh)"  to your rc
 
@@ -74,23 +75,24 @@ func run() error {
 	}
 
 	// The repo you are standing in, wherever it is: it need not be under the
-	// root for its pull requests to be worth checking out.
+	// root to be the project you want to look at.
 	top, topErr := projects.Toplevel(cwd)
 	if topErr == nil {
-		if here := projects.Load(cfg.Root, top); here.IsGitHub() {
-			opts.Here = &here
-		}
+		here := projects.Load(cfg.Root, top)
+		opts.Here = &here
 	}
 
 	switch command {
-	case "", "projects":
+	case "":
+	case "projects":
+		opts.Here = nil // the list, even from inside a project
 	case "add":
 		opts.StartAdd = true
 	case "pr":
 		switch {
 		case topErr != nil:
 			return fmt.Errorf("pr: %s is not inside a git repo", cwd)
-		case opts.Here == nil:
+		case !opts.Here.IsGitHub():
 			return fmt.Errorf("pr: %s has no GitHub remote", top)
 		}
 		opts.StartPR = true
