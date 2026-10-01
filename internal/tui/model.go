@@ -179,7 +179,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.prLoading, m.prErr, m.prs = false, msg.err, msg.prs
 		m.rebuild()
-		if m.opts.StartPR && m.cur().query == "" && m.cur().cursor == 0 {
+		if m.opts.StartPR && m.cur().selectedKey() == goKey {
 			m.cur().move(1) // `pj pr`: land on the first pull request
 		}
 		m.opts.StartPR = false
@@ -347,17 +347,16 @@ func (m *Model) hover() tea.Cmd {
 // loadPreview fetches what the selected row's preview needs, once.
 func (m *Model) loadPreview() tea.Cmd {
 	r, ok := m.cur().selected()
-	if !ok {
+	path := ""
+	switch {
+	case m.view == viewProject && (!ok || r.key == goKey):
+		path = m.proj.Path // the project's own state, also when it has no rows
+	case !ok:
 		return nil
 	}
-	path := ""
 	switch m.view {
 	case viewProjects:
 		path = r.key
-	case viewProject:
-		if r.key == goKey {
-			path = m.proj.Path
-		}
 	case viewAdd:
 		if _, ok := m.readmes[r.key]; !ok {
 			return m.readmeCmd(r.key)
@@ -545,7 +544,9 @@ func (m *Model) rebuild() {
 	m.pick[viewAdd].setRows(rows)
 
 	rows = make([]row, 0, len(m.prs)+1)
-	rows = append(rows, row{key: goKey, name: "Go to project"})
+	if !within(m.opts.Cwd, m.proj.Path) { // no point offering to go where you are
+		rows = append(rows, row{key: goKey, name: "Go to project"})
+	}
 	for _, pr := range m.prs {
 		r := row{
 			key:  fmt.Sprint(pr.Number),

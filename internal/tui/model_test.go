@@ -289,10 +289,8 @@ func TestLaunchedInsideAProjectOpensIt(t *testing.T) {
 	if f.view != viewProject || f.proj.Rel != "Kompell/kompose" {
 		t.Fatalf("view=%v proj=%q", f.view, f.proj.Rel)
 	}
-	equal(t, "rows", f.names(), []string{"Go to project", "#7 Add thing"})
-	if r, _ := f.cur().selected(); r.key != goKey {
-		t.Fatalf("cursor starts on %q", r.name)
-	}
+	// Already there, so there is no row offering to go there.
+	equal(t, "rows", f.names(), []string{"#7 Add thing"})
 
 	f.press("tab") // not part of the tab cycle
 	if f.view != viewProject {
@@ -305,6 +303,28 @@ func TestLaunchedInsideAProjectOpensIt(t *testing.T) {
 	f.press("esc")
 	if !f.quit {
 		t.Fatal("esc on the list should quit")
+	}
+}
+
+func TestInsideAProjectWithNothingToList(t *testing.T) {
+	f := newFixture(t, func(o *Options) {
+		o.Here = &o.Projects[1] // "local": no remote, so no pull requests
+		o.Cwd = o.Projects[1].Path
+	})
+	equal(t, "rows", f.names(), nil)
+	out := ansi.Strip(f.render())
+	for _, want := range []string{"Projects › local", "not on GitHub", "no remote"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q:\n%s", want, out)
+		}
+	}
+	f.press("enter") // nothing selected: must do nothing
+	if f.quit {
+		t.Fatal("enter on an empty project view quit")
+	}
+	f.press("esc")
+	if f.view != viewProjects {
+		t.Fatalf("esc: view=%v", f.view)
 	}
 }
 

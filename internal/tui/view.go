@@ -161,7 +161,7 @@ func (m *Model) emptyText() string {
 		}
 		return sDim.Render("every repo you can access is already cloned")
 	}
-	return ""
+	return m.prSummary()
 }
 
 // projName is how the open project is titled: its path under the root, or its
@@ -215,6 +215,9 @@ func (m *Model) previewLines(width, height int) []string {
 func (m *Model) previewText(width int) string {
 	r, ok := m.cur().selected()
 	if !ok {
+		if m.view == viewProject {
+			return m.projectInfo(m.proj, m.projName())
+		}
 		return ""
 	}
 	now := m.opts.Now()
@@ -324,11 +327,13 @@ func (m *Model) hints() string {
 	case m.view == viewAdd:
 		keys = []string{"enter clone", "tab projects", "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc quit"}
 	default:
-		enter := "enter check out"
-		if m.cur().selectedKey() == goKey {
-			enter = "enter go there"
+		switch key := m.cur().selectedKey(); {
+		case key == goKey:
+			keys = []string{"enter go there"}
+		case key != "":
+			keys = []string{"enter check out"}
 		}
-		keys = []string{enter, "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc projects"}
+		keys = append(keys, "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc projects")
 	}
 	return " " + sDim.Render(strings.Join(keys, "   "))
 }
@@ -347,8 +352,8 @@ func (m *Model) statusLine() string {
 		return " " + sErr.Render("refresh failed, showing the cached list: "+firstLine(m.reposErr.Error()))
 	case m.view == viewAdd && m.reposLoading:
 		return " " + sDim.Render("refreshing…")
-	case m.view == viewProject:
-		return " " + m.prSummary()
+	case m.view == viewProject && len(m.cur().rows) > 0:
+		return " " + m.prSummary() // an empty list says this itself
 	}
 	return ""
 }

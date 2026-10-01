@@ -14,7 +14,7 @@ The second is one project:
 
 | View | Shows | Enter |
 |---|---|---|
-| **Project** | a "Go to project" row, then its open pull requests | go there / check the PR out |
+| **Project** | a "Go to project" row (unless you are already in it), then its open pull requests | go there / check the PR out |
 
 Run inside a repo, pj opens straight onto that project; esc backs out to the
 list.
