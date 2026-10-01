@@ -1,4 +1,4 @@
-// pj is a project manager for a root directory of git repos: go to a project,
+// lazyprojects is a project manager for a root directory of git repos: go to a project,
 // clone one from GitHub into its owner's container, check out a pull request.
 package main
 
@@ -9,38 +9,38 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/HenriAnttila/pj/internal/config"
-	"github.com/HenriAnttila/pj/internal/github"
-	"github.com/HenriAnttila/pj/internal/nav"
-	"github.com/HenriAnttila/pj/internal/projects"
-	"github.com/HenriAnttila/pj/internal/tui"
+	"github.com/HenriAnttila/lazyprojects/internal/config"
+	"github.com/HenriAnttila/lazyprojects/internal/github"
+	"github.com/HenriAnttila/lazyprojects/internal/nav"
+	"github.com/HenriAnttila/lazyprojects/internal/projects"
+	"github.com/HenriAnttila/lazyprojects/internal/tui"
 )
 
-const usage = `usage: pj [flags] [command]
+const usage = `usage: lazyprojects [flags] [command]
 
 commands:
   (none)        the project you are in, or the list of projects under the root
   projects      the list of projects, even from inside one
   add           pick a GitHub repo to clone into the root
   pr            the pull requests of the project you are in
-  init <shell>  print the shell function that lets pj change directory
-                (zsh, bash, sh, fish); add  eval "$(pj init zsh)"  to your rc
+  init <shell>  print the shell function that lets lazyprojects change directory
+                (zsh, bash, sh, fish); add  eval "$(lazyprojects init zsh)"  to your rc
 
 flags:
 `
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "pj:", err)
+		fmt.Fprintln(os.Stderr, "lazyprojects:", err)
 		os.Exit(1)
 	}
 }
 
 func run() error {
-	fs := flag.NewFlagSet("pj", flag.ExitOnError)
-	root := fs.String("root", "", "directory projects live under (default $PJ_ROOT, the config file, then ~/Code)")
+	fs := flag.NewFlagSet("lazyprojects", flag.ExitOnError)
+	root := fs.String("root", "", "directory projects live under (default $LAZYPROJECTS_ROOT, the config file, then ~/Code)")
 	pane := fs.String("pane", "", "tmux pane to cd when run from a popup, e.g. '#{pane_id}'")
-	cdFile := fs.String("cd-file", "", "write the chosen directory here; used by the `pj init` shell function")
+	cdFile := fs.String("cd-file", "", "write the chosen directory here; used by the `lazyprojects init` shell function")
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, usage)
 		fs.PrintDefaults()
@@ -63,7 +63,7 @@ func run() error {
 	}
 	found, err := projects.Scan(cfg.Root)
 	if err != nil {
-		return fmt.Errorf("root %s: %w (set it with --root, $PJ_ROOT, or `root = ...` in the config file)", cfg.Root, err)
+		return fmt.Errorf("root %s: %w (set it with --root, $LAZYPROJECTS_ROOT, or `root = ...` in the config file)", cfg.Root, err)
 	}
 	cwd, _ := os.Getwd()
 	opts := tui.Options{

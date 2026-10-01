@@ -179,7 +179,7 @@ func CachePath() string {
 		home, _ := os.UserHomeDir()
 		dir = filepath.Join(home, ".cache")
 	}
-	return filepath.Join(dir, "pj", "repos.json")
+	return filepath.Join(dir, "lazyprojects", "repos.json")
 }
 
 func LoadCache(path string) []Repo {

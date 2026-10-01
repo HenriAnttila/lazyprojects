@@ -7,7 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/HenriAnttila/pj/internal/projects"
+	"github.com/HenriAnttila/lazyprojects/internal/projects"
 )
 
 // prompt asks which container a clone goes into. It starts on the repo's

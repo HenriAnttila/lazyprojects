@@ -1,10 +1,10 @@
 // Package nav moves the user's shell to a directory after the TUI exits.
 //
 // A program cannot change the working directory of the shell that started it,
-// so one of three hand-offs is used, depending on how pj was launched:
+// so one of three hand-offs is used, depending on how lazyprojects was launched:
 //
 //   - from a tmux popup, the cd is typed into the pane underneath (--pane);
-//   - from the shell function printed by `pj init`, the path is written to a
+//   - from the shell function printed by `lazyprojects init`, the path is written to a
 //     file the function reads and cds to (--cd-file);
 //   - with neither, the path is printed, which is the best a bare binary can do.
 package nav
@@ -69,25 +69,25 @@ func Quote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// InitScript is the shell function that makes `pj` change directory. It shadows
+// InitScript is the shell function that makes `lazyprojects` change directory. It shadows
 // the binary, runs it with a temp file to write the chosen path to, and cds
 // there if one was written.
 func InitScript(shell string) (string, error) {
 	switch shell {
 	case "zsh", "bash", "sh":
-		return `pj() {
+		return `lazyprojects() {
   local f d
-  f=$(mktemp "${TMPDIR:-/tmp}/pj-cd.XXXXXX") || return
-  command pj --cd-file "$f" "$@"
+  f=$(mktemp "${TMPDIR:-/tmp}/lazyprojects-cd.XXXXXX") || return
+  command lazyprojects --cd-file "$f" "$@"
   d=$(cat "$f" 2>/dev/null)
   rm -f "$f"
   [ -n "$d" ] && cd -- "$d"
 }
 `, nil
 	case "fish":
-		return `function pj
-  set -l f (mktemp -t pj-cd.XXXXXX); or return
-  command pj --cd-file $f $argv
+		return `function lazyprojects
+  set -l f (mktemp -t lazyprojects-cd.XXXXXX); or return
+  command lazyprojects --cd-file $f $argv
   set -l d (cat $f 2>/dev/null)
   rm -f $f
   test -n "$d"; and cd -- $d

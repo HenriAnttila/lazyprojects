@@ -12,8 +12,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/HenriAnttila/pj/internal/github"
-	"github.com/HenriAnttila/pj/internal/projects"
+	"github.com/HenriAnttila/lazyprojects/internal/github"
+	"github.com/HenriAnttila/lazyprojects/internal/projects"
 )
 
 func init() { hoverDelay = 0 }

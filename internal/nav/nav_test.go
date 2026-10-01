@@ -30,8 +30,8 @@ func TestCdFile(t *testing.T) {
 	}
 }
 
-// The init function is what makes `pj` change directory, so run it for real:
-// a stand-in pj binary writes a path to --cd-file and the shell must end up there.
+// The init function is what makes `lazyprojects` change directory, so run it for real:
+// a stand-in lazyprojects binary writes a path to --cd-file and the shell must end up there.
 func TestInitScriptChangesDirectory(t *testing.T) {
 	for _, shell := range []string{"bash", "zsh", "sh"} {
 		if _, err := exec.LookPath(shell); err != nil {
@@ -44,11 +44,11 @@ func TestInitScriptChangesDirectory(t *testing.T) {
 			}
 			bin, dest := t.TempDir(), filepath.Join(t.TempDir(), "it's here")
 			os.MkdirAll(dest, 0o755)
-			fake := "#!/bin/sh\n[ \"$1\" = --cd-file ] && printf %s \"$PJ_DEST\" > \"$2\"\n"
-			os.WriteFile(filepath.Join(bin, "pj"), []byte(fake), 0o755)
+			fake := "#!/bin/sh\n[ \"$1\" = --cd-file ] && printf %s \"$LAZYPROJECTS_DEST\" > \"$2\"\n"
+			os.WriteFile(filepath.Join(bin, "lazyprojects"), []byte(fake), 0o755)
 
-			cmd := exec.Command(shell, "-c", script+"\npj\npwd")
-			cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "PJ_DEST="+dest)
+			cmd := exec.Command(shell, "-c", script+"\nlazyprojects\npwd")
+			cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "LAZYPROJECTS_DEST="+dest)
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Fatalf("%v\n%s", err, out)

@@ -7,7 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/HenriAnttila/pj/internal/projects"
+	"github.com/HenriAnttila/lazyprojects/internal/projects"
 )
 
 // confirm is the screen between choosing "Delete project" and the directory

@@ -13,7 +13,7 @@ type Config struct {
 	Root string
 }
 
-// Load resolves the root in order of precedence: the --root flag, $PJ_ROOT,
+// Load resolves the root in order of precedence: the --root flag, $LAZYPROJECTS_ROOT,
 // the config file, then ~/Code.
 func Load(flagRoot string) (Config, error) {
 	home, err := os.UserHomeDir()
@@ -24,7 +24,7 @@ func Load(flagRoot string) (Config, error) {
 	if v := fromFile(Path(home))["root"]; v != "" {
 		root = v
 	}
-	if v := os.Getenv("PJ_ROOT"); v != "" {
+	if v := os.Getenv("LAZYPROJECTS_ROOT"); v != "" {
 		root = v
 	}
 	if flagRoot != "" {
@@ -43,7 +43,7 @@ func Path(home string) string {
 	if dir == "" {
 		dir = filepath.Join(home, ".config")
 	}
-	return filepath.Join(dir, "pj", "config")
+	return filepath.Join(dir, "lazyprojects", "config")
 }
 
 // fromFile reads `key = value` lines. Values may be quoted; # starts a comment.

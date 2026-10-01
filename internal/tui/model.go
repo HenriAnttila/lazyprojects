@@ -9,7 +9,7 @@
 //	PRs       that project's open pull requests   enter: check out
 //
 // Each layer is entered with enter or the right arrow and left with the left
-// arrow; esc closes pj from anywhere. Launched inside a repo, pj opens on that project rather than
+// arrow; esc closes lazyprojects from anywhere. Launched inside a repo, lazyprojects opens on that project rather than
 // on the list.
 //
 // Typing always filters, as in fzf, so every action is Enter, Tab or a ctrl
@@ -26,8 +26,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/HenriAnttila/pj/internal/github"
-	"github.com/HenriAnttila/pj/internal/projects"
+	"github.com/HenriAnttila/lazyprojects/internal/github"
+	"github.com/HenriAnttila/lazyprojects/internal/projects"
 )
 
 type viewID int
@@ -55,11 +55,11 @@ type Options struct {
 	// CachePath holds the repo list between runs; empty disables the cache.
 	CachePath string
 
-	// Here is the repo the shell is standing in, or nil. When set, pj opens on
+	// Here is the repo the shell is standing in, or nil. When set, lazyprojects opens on
 	// that project's view rather than the list.
 	Here *projects.Project
 	// StartAdd opens on the Add view instead. StartPR opens on Here's pull
-	// requests, for `pj pr`.
+	// requests, for `lazyprojects pr`.
 	StartAdd, StartPR bool
 	// Notice is shown in the status line at launch.
 	Notice string
@@ -266,7 +266,7 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	switch k {
 	case "ctrl+c", "esc", "alt+esc": // two quick escapes arrive as alt+esc
-		// Escape always closes pj, from any layer and with a filter typed.
+		// Escape always closes lazyprojects, from any layer and with a filter typed.
 		// Going back a layer is the left arrow.
 		return tea.Quit
 	}
@@ -611,7 +611,7 @@ func (m *Model) rebuild() {
 			row{key: webKey, name: "Open on GitHub"})
 	}
 	// Not from inside it, which would leave the shell in a deleted directory;
-	// and only under the root, where pj is the one managing what exists.
+	// and only under the root, where lazyprojects is the one managing what exists.
 	if !inside && within(m.proj.Path, m.opts.Root) && m.proj.Path != m.opts.Root {
 		rows = append(rows, row{key: delKey, name: "Delete project"})
 	}
