@@ -188,8 +188,8 @@ func TestEnterOpensTheProjectAndEnterAgainGoesThere(t *testing.T) {
 		t.Fatalf("after first enter: quit=%v view=%v proj=%q", f.quit, f.view, f.proj.Rel)
 	}
 	// Not on GitHub, so pull requests are not offered.
-	equal(t, "options", f.names(), []string{"Go to project", "Open in tmux session", "Delete project"})
-	f.press("enter")
+	equal(t, "options", f.names(), []string{"Open in tmux session", "Go to project", "Delete project"})
+	f.press("down", "enter")
 	if !f.quit || f.Result != filepath.Join(f.root, "local") {
 		t.Fatalf("after second enter: quit=%v Result=%q", f.quit, f.Result)
 	}
@@ -200,7 +200,7 @@ func TestEnterOpensTheProjectAndEnterAgainGoesThere(t *testing.T) {
 
 func TestOpenInTmuxSessionAsksForASession(t *testing.T) {
 	f := newFixture(t, nil)
-	f.press("local", "enter", "down", "enter")
+	f.press("local", "enter", "enter")
 	if !f.quit || !f.Session || f.Result != filepath.Join(f.root, "local") {
 		t.Fatalf("quit=%v Session=%v Result=%q", f.quit, f.Session, f.Result)
 	}
@@ -218,7 +218,7 @@ func prCalls(f *fixture) (n int) {
 func TestPullRequestsAreAnOptionOnTheProject(t *testing.T) {
 	f := newFixture(t, nil)
 	f.press("kompose", "enter")
-	equal(t, "options", f.names(), []string{"Go to project", "Open in tmux session", "Pull requests", "Open on GitHub", "Delete project"})
+	equal(t, "options", f.names(), []string{"Open in tmux session", "Go to project", "Pull requests", "Open on GitHub", "Delete project"})
 	if n := prCalls(f); n != 0 {
 		t.Fatalf("fetched pull requests %d times before they were asked for", n)
 	}
@@ -269,9 +269,9 @@ func TestRightGoesALayerInButNeverActs(t *testing.T) {
 	if f.view != viewProject || f.proj.Rel != "Kompell/kompose" {
 		t.Fatalf("right on a project: view=%v proj=%q", f.view, f.proj.Rel)
 	}
-	f.press("right") // on "Go to project": that is an action, not a layer
+	f.press("right") // on "Open in tmux session": that is an action, not a layer
 	if f.quit || f.view != viewProject {
-		t.Fatalf("right on Go to project: quit=%v view=%v", f.quit, f.view)
+		t.Fatalf("right on Open in tmux session: quit=%v view=%v", f.quit, f.view)
 	}
 	f.press("down", "down", "right")
 	if f.view != viewPRs {

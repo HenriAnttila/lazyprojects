@@ -41,8 +41,8 @@ const (
 
 // The project view's rows: the things you can do with a project.
 const (
-	goKey   = "go"
 	sessKey = "session"
+	goKey   = "go"
 	prsKey  = "prs"
 	webKey  = "web"
 	delKey  = "delete"
@@ -606,13 +606,12 @@ func (m *Model) rebuild() {
 	}
 	m.pick[viewAdd].setRows(rows)
 
-	rows = nil
+	// Offered from inside the project too: a session of its own is still
+	// somewhere else to be.
+	rows = []row{{key: sessKey, name: "Open in tmux session"}}
 	if !within(m.opts.Cwd, m.proj.Path) { // no point offering to go where you are
 		rows = append(rows, row{key: goKey, name: "Go to project"})
 	}
-	// Offered from inside the project too: a session of its own is still
-	// somewhere else to be.
-	rows = append(rows, row{key: sessKey, name: "Open in tmux session"})
 	inside := within(m.opts.Cwd, m.proj.Path)
 	if m.proj.IsGitHub() {
 		rows = append(rows,
