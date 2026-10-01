@@ -116,6 +116,7 @@ func (f *fixture) press(keys ...string) {
 	special := map[string]tea.KeyPressMsg{
 		"enter":     {Code: tea.KeyEnter},
 		"esc":       {Code: tea.KeyEscape},
+		"left":      {Code: tea.KeyLeft},
 		"tab":       {Code: tea.KeyTab},
 		"down":      {Code: tea.KeyDown},
 		"up":        {Code: tea.KeyUp},
@@ -217,25 +218,55 @@ func TestPullRequestsAreAnOptionOnTheProject(t *testing.T) {
 	}
 }
 
-func TestEscBacksOutOneLayerAtATime(t *testing.T) {
+func TestEscAlwaysQuits(t *testing.T) {
+	for name, keys := range map[string][]string{
+		"the list":            nil,
+		"a typed filter":      {"komp"},
+		"the Add view":        {"tab"},
+		"a project":           {"kompose", "enter"},
+		"its pull requests":   {"kompose", "enter", "down", "enter"},
+		"the clone prompt":    {"tab", "enter"},
+		"a dismissable error": nil,
+	} {
+		f := newFixture(t, nil)
+		f.press(keys...)
+		if name == "a dismissable error" {
+			f.fail(errors.New("line one\nline two"))
+		}
+		f.press("esc")
+		if !f.quit || f.Result != "" {
+			t.Errorf("esc on %s: quit=%v Result=%q", name, f.quit, f.Result)
+		}
+	}
+}
+
+func TestLeftBacksOutOneLayerAtATime(t *testing.T) {
 	f := newFixture(t, nil)
-	f.press("kompose", "enter", "down", "enter", "esc")
+	f.press("kompose", "enter", "down", "enter", "left")
 	if f.quit || f.view != viewProject {
-		t.Fatalf("esc from pull requests: quit=%v view=%v", f.quit, f.view)
+		t.Fatalf("left from pull requests: quit=%v view=%v", f.quit, f.view)
 	}
 	if r, _ := f.cur().selected(); r.key != prsKey {
 		t.Fatalf("cursor came back on %q", r.name)
 	}
-	f.press("esc")
+	f.press("left")
 	if f.quit || f.view != viewProjects {
-		t.Fatalf("esc from the project: quit=%v view=%v", f.quit, f.view)
+		t.Fatalf("left from the project: quit=%v view=%v", f.quit, f.view)
 	}
 	if r, _ := f.cur().selected(); r.name != "Kompell/kompose" {
 		t.Fatalf("cursor came back on %q", r.name)
 	}
+	f.press("left") // nowhere further back: stays put, does not quit
+	if f.quit || f.view != viewProjects {
+		t.Fatalf("left on the list: quit=%v view=%v", f.quit, f.view)
+	}
 	f.press("tab")
 	if f.view != viewAdd {
 		t.Fatalf("tab from the list: view=%v", f.view)
+	}
+	f.press("enter", "left") // the clone prompt closes the same way
+	if f.quit || f.prompt != nil {
+		t.Fatalf("left on the clone prompt: quit=%v prompt=%v", f.quit, f.prompt)
 	}
 }
 
@@ -310,13 +341,9 @@ func TestLaunchedInsideAProjectOpensIt(t *testing.T) {
 	if f.view != viewProject {
 		t.Fatalf("tab left the project view for %v", f.view)
 	}
-	f.press("esc")
+	f.press("left")
 	if f.quit || f.view != viewProjects {
-		t.Fatalf("esc: quit=%v view=%v", f.quit, f.view)
-	}
-	f.press("esc")
-	if !f.quit {
-		t.Fatal("esc on the list should quit")
+		t.Fatalf("left: quit=%v view=%v", f.quit, f.view)
 	}
 }
 
@@ -336,9 +363,9 @@ func TestInsideAProjectWithNothingToOffer(t *testing.T) {
 	if f.quit {
 		t.Fatal("enter on an empty project view quit")
 	}
-	f.press("esc")
+	f.press("left")
 	if f.view != viewProjects {
-		t.Fatalf("esc: view=%v", f.view)
+		t.Fatalf("left: view=%v", f.view)
 	}
 }
 
@@ -418,7 +445,7 @@ func TestRenderFitsTheTerminal(t *testing.T) {
 		f := newFixture(t, inRepo(false))
 		f.send(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 		// project, its pull requests, the list, Add, the clone prompt
-		for _, keys := range [][]string{nil, {"enter"}, {"esc", "esc"}, {"tab"}, {"enter"}} {
+		for _, keys := range [][]string{nil, {"enter"}, {"left", "left"}, {"tab"}, {"enter"}} {
 			f.press(keys...)
 			lines := strings.Split(f.render(), "\n")
 			if len(lines) != max(size[1], chrome+1) {

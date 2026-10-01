@@ -1,8 +1,8 @@
 # pj
 
 A project manager for a directory of git repos, in layers that share one
-layout (filter on top, list left, preview right). Enter goes a layer in, esc a
-layer out.
+layout (filter on top, list left, preview right). Enter goes a layer in, the
+left arrow a layer out, and esc closes pj from anywhere.
 
 | Layer | Shows | Enter |
 |---|---|---|
@@ -71,7 +71,8 @@ Without either, pj prints the path.
 | `ctrl-y` | copy the URL |
 | `pgup` `pgdn` | scroll the preview |
 | `ctrl-u` | clear the filter |
-| `esc` | clear the filter, go back a layer, or quit |
+| `←` | back a layer; cancels the clone prompt |
+| `esc` | quit, from anywhere |
 | `ctrl-c` | cancel a running clone or checkout; otherwise quit |
 
 ## Code

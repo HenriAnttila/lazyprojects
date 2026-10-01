@@ -315,7 +315,7 @@ func (m *Model) hints() string {
 	case m.busy != "":
 		keys = []string{"ctrl-c cancel"}
 	case m.prompt != nil:
-		keys = []string{"enter clone", "tab next container", "esc cancel"}
+		keys = []string{"enter clone", "tab next container", "← cancel", "esc quit"}
 	case m.view == viewProjects:
 		keys = []string{"enter open", "tab add", "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc quit"}
 	case m.view == viewAdd:
@@ -327,12 +327,12 @@ func (m *Model) hints() string {
 		case prsKey:
 			keys = []string{"enter open"}
 		}
-		keys = append(keys, "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc projects")
+		keys = append(keys, "← projects", "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc quit")
 	default:
 		if m.cur().selectedKey() != "" {
 			keys = []string{"enter check out"}
 		}
-		keys = append(keys, "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc back")
+		keys = append(keys, "← back", "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc quit")
 	}
 	return " " + sDim.Render(strings.Join(keys, "   "))
 }

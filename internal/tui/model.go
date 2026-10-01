@@ -8,8 +8,9 @@
 //
 //	PRs       that project's open pull requests   enter: check out
 //
-// Each layer is entered with enter and left with esc. Launched inside a repo,
-// pj opens on that project rather than on the list.
+// Each layer is entered with enter and left with the left arrow; esc closes pj
+// from anywhere. Launched inside a repo, pj opens on that project rather than
+// on the list.
 //
 // Typing always filters, as in fzf, so every action is Enter, Tab or a ctrl
 // chord. The model follows Bubble Tea's Elm loop: Update handles one message
@@ -238,7 +239,10 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		return nil
 	}
-	if k == "ctrl+c" {
+	switch k {
+	case "ctrl+c", "esc", "alt+esc": // two quick escapes arrive as alt+esc
+		// Escape always closes pj, from any layer and with a filter typed.
+		// Going back a layer is the left arrow.
 		return tea.Quit
 	}
 	if m.errorDetail() {
@@ -252,20 +256,17 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 
 	before := m.cur().selectedKey()
 	switch k {
-	case "esc", "alt+esc": // two quick escapes arrive as alt+esc; never drop them
-		switch {
-		case m.cur().query != "":
-			m.cur().setQuery("")
-		case m.view == viewPRs:
+	case "left":
+		switch m.view {
+		case viewPRs:
 			m.view = viewProject
-			return m.hover()
-		case m.view == viewProject:
+		case viewProject:
 			m.view = viewProjects
 			m.cur().selectKey(m.proj.Path)
-			return m.hover()
 		default:
-			return tea.Quit
+			return nil // already at the first layer
 		}
+		return m.hover()
 	case "up", "ctrl+p":
 		m.cur().move(-1)
 	case "down", "ctrl+n":
@@ -310,7 +311,7 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 // cycle switches between the two lists. The project view is not part of the
-// cycle: it is entered with enter and left with esc.
+// cycle: it is entered with enter and left with the left arrow.
 func (m *Model) cycle() {
 	switch m.view {
 	case viewProjects:

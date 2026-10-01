@@ -37,7 +37,7 @@ func (m *Model) promptKey(msg tea.KeyPressMsg) tea.Cmd {
 	p := m.prompt
 	p.err = ""
 	switch msg.String() {
-	case "esc", "alt+esc":
+	case "left":
 		m.prompt = nil
 	case "tab", "down", "ctrl+n":
 		p.option = (p.option + 1) % len(p.options)
