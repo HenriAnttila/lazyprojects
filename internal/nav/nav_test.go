@@ -30,6 +30,58 @@ func TestCdFile(t *testing.T) {
 	}
 }
 
+func TestSessionName(t *testing.T) {
+	for in, want := range map[string]string{
+		"/code/acme/website": "website",
+		"/code/acme/next.js": "next_js",
+		"/code/acme/a:b":     "a_b",
+	} {
+		if got := SessionName(in); got != want {
+			t.Errorf("SessionName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// A stand-in tmux records what it was asked to do, and answers has-session
+// with whatever $FAKE_HAS says.
+func TestSession(t *testing.T) {
+	for name, tc := range map[string]struct {
+		tmux, has string
+		want      []string
+	}{
+		"inside tmux, no session yet": {"sock,1,0", "1", []string{
+			"has-session -t =next_js",
+			"new-session -d -s next_js -c /code/acme/next.js",
+			"switch-client -t =next_js",
+		}},
+		"inside tmux, session exists": {"sock,1,0", "0", []string{
+			"has-session -t =next_js",
+			"switch-client -t =next_js",
+		}},
+		"outside tmux": {"", "1", []string{
+			"new-session -A -s next_js -c /code/acme/next.js",
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			bin, log := t.TempDir(), filepath.Join(t.TempDir(), "log")
+			fake := "#!/bin/sh\necho \"$*\" >> \"$FAKE_LOG\"\n[ \"$1\" = has-session ] && exit \"$FAKE_HAS\"\nexit 0\n"
+			os.WriteFile(filepath.Join(bin, "tmux"), []byte(fake), 0o755)
+			t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+			t.Setenv("FAKE_LOG", log)
+			t.Setenv("FAKE_HAS", tc.has)
+			t.Setenv("TMUX", tc.tmux)
+
+			if err := Session("/code/acme/next.js"); err != nil {
+				t.Fatal(err)
+			}
+			out, _ := os.ReadFile(log)
+			if got := strings.TrimSpace(string(out)); got != strings.Join(tc.want, "\n") {
+				t.Fatalf("tmux was asked:\n%s\nwant:\n%s", got, strings.Join(tc.want, "\n"))
+			}
+		})
+	}
+}
+
 // The init function is what makes `lazyprojects` change directory, so run it for real:
 // a stand-in lazyprojects binary writes a path to --cd-file and the shell must end up there.
 func TestInitScriptChangesDirectory(t *testing.T) {

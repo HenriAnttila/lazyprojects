@@ -167,10 +167,6 @@ func (m *Model) emptyText() string {
 			return sDim.Render("loading your repos from GitHub…")
 		}
 		return sDim.Render("every repo you can access is already cloned")
-	case viewProject:
-		// Reached only from inside a project that is not on GitHub: nowhere
-		// to go, and no pull requests to list.
-		return sDim.Render("not on GitHub: nothing to do here")
 	}
 	switch {
 	case m.prLoading:
@@ -330,6 +326,8 @@ func (m *Model) hints() string {
 		switch m.cur().selectedKey() {
 		case goKey:
 			keys = []string{"enter go there"}
+		case sessKey:
+			keys = []string{"enter open session"}
 		case prsKey:
 			keys = []string{"enter/→ open"}
 		case webKey:

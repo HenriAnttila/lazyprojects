@@ -19,7 +19,7 @@ closes it.
 |---|---|---|
 | **Projects** | every git repo under the root | open that project |
 | **Add** | your GitHub repos that aren't cloned yet, last pushed first | clone it, then go there |
-| **Project** | what you can do with it: go there, pull requests, open on GitHub, delete | do it |
+| **Project** | what you can do with it: go there, open a tmux session, pull requests, open on GitHub, delete | do it |
 | **Pull requests** | that project's open PRs | check it out |
 
 Projects and Add are the first layer, switched with `tab`. Run it inside a
@@ -76,6 +76,13 @@ over in one of two ways:
   This refuses when the pane is running something other than a shell.
 
 Without either, it prints the path.
+
+## tmux sessions
+
+"Open in tmux session" on a project opens it in a session named after the
+repo, `website` for `~/Code/acme/website`. If a session by that name already
+exists, it switches to that one instead of making another. Run outside tmux,
+it starts tmux in the terminal you're in.
 
 ## Commands
 

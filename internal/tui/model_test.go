@@ -188,10 +188,21 @@ func TestEnterOpensTheProjectAndEnterAgainGoesThere(t *testing.T) {
 		t.Fatalf("after first enter: quit=%v view=%v proj=%q", f.quit, f.view, f.proj.Rel)
 	}
 	// Not on GitHub, so pull requests are not offered.
-	equal(t, "options", f.names(), []string{"Go to project", "Delete project"})
+	equal(t, "options", f.names(), []string{"Go to project", "Open in tmux session", "Delete project"})
 	f.press("enter")
 	if !f.quit || f.Result != filepath.Join(f.root, "local") {
 		t.Fatalf("after second enter: quit=%v Result=%q", f.quit, f.Result)
+	}
+	if f.Session {
+		t.Fatal("going there asked for a session")
+	}
+}
+
+func TestOpenInTmuxSessionAsksForASession(t *testing.T) {
+	f := newFixture(t, nil)
+	f.press("local", "enter", "down", "enter")
+	if !f.quit || !f.Session || f.Result != filepath.Join(f.root, "local") {
+		t.Fatalf("quit=%v Session=%v Result=%q", f.quit, f.Session, f.Result)
 	}
 }
 
@@ -207,12 +218,12 @@ func prCalls(f *fixture) (n int) {
 func TestPullRequestsAreAnOptionOnTheProject(t *testing.T) {
 	f := newFixture(t, nil)
 	f.press("kompose", "enter")
-	equal(t, "options", f.names(), []string{"Go to project", "Pull requests", "Open on GitHub", "Delete project"})
+	equal(t, "options", f.names(), []string{"Go to project", "Open in tmux session", "Pull requests", "Open on GitHub", "Delete project"})
 	if n := prCalls(f); n != 0 {
 		t.Fatalf("fetched pull requests %d times before they were asked for", n)
 	}
 
-	f.press("down", "enter")
+	f.press("down", "down", "enter")
 	if f.view != viewPRs || prCalls(f) != 1 {
 		t.Fatalf("view=%v prCalls=%d", f.view, prCalls(f))
 	}
@@ -235,9 +246,9 @@ func TestEscAlwaysQuits(t *testing.T) {
 		"a typed filter":      {"komp"},
 		"the Add view":        {"tab"},
 		"a project":           {"kompose", "enter"},
-		"its pull requests":   {"kompose", "enter", "down", "enter"},
+		"its pull requests":   {"kompose", "enter", "down", "down", "enter"},
 		"the clone prompt":    {"tab", "enter"},
-		"the delete screen":   {"local", "enter", "down", "enter"},
+		"the delete screen":   {"local", "enter", "down", "down", "enter"},
 		"a dismissable error": nil,
 	} {
 		f := newFixture(t, nil)
@@ -262,7 +273,7 @@ func TestRightGoesALayerInButNeverActs(t *testing.T) {
 	if f.quit || f.view != viewProject {
 		t.Fatalf("right on Go to project: quit=%v view=%v", f.quit, f.view)
 	}
-	f.press("down", "right")
+	f.press("down", "down", "right")
 	if f.view != viewPRs {
 		t.Fatalf("right on Pull requests: view=%v", f.view)
 	}
@@ -280,7 +291,7 @@ func TestRightGoesALayerInButNeverActs(t *testing.T) {
 
 func TestLeftBacksOutOneLayerAtATime(t *testing.T) {
 	f := newFixture(t, nil)
-	f.press("kompose", "enter", "down", "enter", "left")
+	f.press("kompose", "enter", "down", "down", "enter", "left")
 	if f.quit || f.view != viewProject {
 		t.Fatalf("left from pull requests: quit=%v view=%v", f.quit, f.view)
 	}
@@ -371,7 +382,7 @@ func TestLaunchedInsideAProjectOpensIt(t *testing.T) {
 	}
 	// Already there, so going there is not offered, nor is deleting the
 	// directory the shell is standing in; and nothing is fetched yet.
-	equal(t, "options", f.names(), []string{"Pull requests", "Open on GitHub"})
+	equal(t, "options", f.names(), []string{"Open in tmux session", "Pull requests", "Open on GitHub"})
 	if n := prCalls(f); n != 0 {
 		t.Fatalf("fetched pull requests %d times at launch", n)
 	}
@@ -386,21 +397,19 @@ func TestLaunchedInsideAProjectOpensIt(t *testing.T) {
 	}
 }
 
-func TestInsideAProjectWithNothingToOffer(t *testing.T) {
+func TestInsideAProjectNotOnGitHubOffersOnlyASession(t *testing.T) {
 	f := newFixture(t, func(o *Options) {
 		o.Here = &o.Projects[1] // "local": no remote, so no pull requests
 		o.Cwd = o.Projects[1].Path
 	})
-	equal(t, "options", f.names(), nil)
+	// Nowhere to go and nothing on GitHub, but a session of its own is still
+	// somewhere else to be.
+	equal(t, "options", f.names(), []string{"Open in tmux session"})
 	out := ansi.Strip(f.render())
-	for _, want := range []string{"Projects › local", "not on GitHub", "no remote"} {
+	for _, want := range []string{"Projects › local", "no remote"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q:\n%s", want, out)
 		}
-	}
-	f.press("enter") // nothing selected: must do nothing
-	if f.quit {
-		t.Fatal("enter on an empty project view quit")
 	}
 	f.press("left")
 	if f.view != viewProjects {
@@ -452,7 +461,7 @@ func TestCheckoutFailureLeavesYouInThePicker(t *testing.T) {
 
 func TestStalePRAnswerIsDropped(t *testing.T) {
 	f := newFixture(t, nil)
-	f.press("kompose", "enter", "down", "enter")
+	f.press("kompose", "enter", "down", "down", "enter")
 	f.send(prsMsg{seq: f.prSeq - 1, prs: []github.PR{{Number: 99, Title: "from another project"}}})
 	equal(t, "pull requests", f.names(), []string{"#7 Add thing"})
 }
@@ -467,7 +476,7 @@ func TestCloneNeverChecksAnythingOut(t *testing.T) {
 
 func TestOpenOnGitHubRow(t *testing.T) {
 	f := newFixture(t, nil)
-	f.press("kompose", "enter", "down", "down", "enter")
+	f.press("kompose", "enter", "down", "down", "down", "enter")
 	if last := f.ghCalls[len(f.ghCalls)-1]; last != "repo view Kompell/kompose --web" {
 		t.Fatalf("last gh call = %q", last)
 	}
@@ -478,7 +487,7 @@ func TestOpenOnGitHubRow(t *testing.T) {
 
 func TestDeleteWithNothingToLoseTakesOneEnter(t *testing.T) {
 	f := newFixture(t, nil)
-	f.press("local", "enter", "down", "enter")
+	f.press("local", "enter", "down", "down", "enter")
 	if f.confirm == nil || len(f.deleted) != 0 {
 		t.Fatalf("confirm=%v deleted=%v", f.confirm, f.deleted)
 	}
@@ -496,7 +505,7 @@ func TestDeleteWithNothingToLoseTakesOneEnter(t *testing.T) {
 func TestDeleteWithSomethingToLoseNeedsTheNameTyped(t *testing.T) {
 	f := newFixture(t, nil)
 	f.risk = projects.Risk{Dirty: 2, Unpushed: []string{"main (3 commits)"}, Stashes: 1, Ignored: []string{".env"}}
-	f.press("kompose", "enter", "down", "down", "down", "enter")
+	f.press("kompose", "enter", "down", "down", "down", "down", "enter")
 	out := ansi.Strip(f.render())
 	for _, want := range []string{"2 uncommitted or untracked files", "not pushed: main (3 commits)", "1 stash", ".env", "type kompose to delete"} {
 		if !strings.Contains(out, want) {
@@ -520,7 +529,7 @@ func TestDeleteWithSomethingToLoseNeedsTheNameTyped(t *testing.T) {
 
 func TestDeleteNeverRunsOnAnUnfinishedCheckOrAfterCancel(t *testing.T) {
 	f := newFixture(t, nil)
-	f.press("local", "enter", "down", "enter")
+	f.press("local", "enter", "down", "down", "enter")
 	f.confirm.risk = nil // as if git had not answered yet
 	f.press("enter")
 	if len(f.deleted) != 0 || f.confirm == nil {
@@ -535,7 +544,7 @@ func TestDeleteNeverRunsOnAnUnfinishedCheckOrAfterCancel(t *testing.T) {
 func TestDeleteFailureIsReported(t *testing.T) {
 	f := newFixture(t, nil)
 	f.delErr = errors.New("permission denied")
-	f.press("local", "enter", "down", "enter", "enter")
+	f.press("local", "enter", "down", "down", "enter", "enter")
 	if !f.statusErr || !strings.Contains(f.status, "permission denied") || f.busy != "" {
 		t.Fatalf("status=%q busy=%q", f.status, f.busy)
 	}

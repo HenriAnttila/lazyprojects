@@ -112,5 +112,8 @@ func run() error {
 	if m.Result == "" {
 		return nil
 	}
+	if m.Session {
+		return nav.Session(m.Result)
+	}
 	return nav.Target{Pane: *pane, CdFile: *cdFile}.Go(m.Result)
 }

@@ -7,14 +7,46 @@
 //   - from the shell function printed by `lazyprojects init`, the path is written to a
 //     file the function reads and cds to (--cd-file);
 //   - with neither, the path is printed, which is the best a bare binary can do.
+//
+// Session is the other way to get there: a tmux session in the directory,
+// which moves no shell at all.
 package nav
 
 import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
+
+// Session opens dir in the tmux session named after it, creating the session
+// when there is none by that name yet. Inside tmux the client switches to it;
+// attaching there would nest. Outside, tmux takes over this terminal.
+func Session(dir string) error {
+	name := SessionName(dir)
+	if os.Getenv("TMUX") == "" {
+		cmd := exec.Command("tmux", "new-session", "-A", "-s", name, "-c", dir)
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+		return cmd.Run()
+	}
+	// = makes the match exact; a bare name also matches by prefix.
+	if exec.Command("tmux", "has-session", "-t", "="+name).Run() != nil {
+		if out, err := exec.Command("tmux", "new-session", "-d", "-s", name, "-c", dir).CombinedOutput(); err != nil {
+			return fmt.Errorf("tmux new-session: %s", strings.TrimSpace(string(out)))
+		}
+	}
+	if out, err := exec.Command("tmux", "switch-client", "-t", "="+name).CombinedOutput(); err != nil {
+		return fmt.Errorf("tmux switch-client: %s", strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// SessionName is the directory's own name, with the two characters tmux
+// rewrites in a session name replaced the way tmux would.
+func SessionName(dir string) string {
+	return strings.NewReplacer(".", "_", ":", "_").Replace(filepath.Base(dir))
+}
 
 type Target struct {
 	Pane   string // tmux pane id to send the cd to

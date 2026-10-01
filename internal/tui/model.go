@@ -41,10 +41,11 @@ const (
 
 // The project view's rows: the things you can do with a project.
 const (
-	goKey  = "go"
-	prsKey = "prs"
-	webKey = "web"
-	delKey = "delete"
+	goKey   = "go"
+	sessKey = "session"
+	prsKey  = "prs"
+	webKey  = "web"
+	delKey  = "delete"
 )
 
 type Options struct {
@@ -108,9 +109,11 @@ type Model struct {
 	statusErr bool
 
 	// Result is the directory to move the shell to once the program exits, and
-	// Message a line to print after it. Both may be empty.
+	// Message a line to print after it. Both may be empty. Session asks for
+	// Result to be opened as a tmux session instead of cd'd to.
 	Result  string
 	Message string
+	Session bool
 }
 
 func New(opts Options) *Model {
@@ -438,6 +441,9 @@ func (m *Model) enter() tea.Cmd {
 		case goKey:
 			m.Result = m.proj.Path
 			return tea.Quit
+		case sessKey:
+			m.Result, m.Session = m.proj.Path, true
+			return tea.Quit
 		case prsKey:
 			m.openPRs()
 			return tea.Batch(m.prsCmd(), m.hover())
@@ -604,6 +610,9 @@ func (m *Model) rebuild() {
 	if !within(m.opts.Cwd, m.proj.Path) { // no point offering to go where you are
 		rows = append(rows, row{key: goKey, name: "Go to project"})
 	}
+	// Offered from inside the project too: a session of its own is still
+	// somewhere else to be.
+	rows = append(rows, row{key: sessKey, name: "Open in tmux session"})
 	inside := within(m.opts.Cwd, m.proj.Path)
 	if m.proj.IsGitHub() {
 		rows = append(rows,
