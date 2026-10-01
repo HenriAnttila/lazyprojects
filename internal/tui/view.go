@@ -317,7 +317,7 @@ func (m *Model) hints() string {
 	case m.prompt != nil:
 		keys = []string{"enter clone", "tab next container", "← cancel", "esc quit"}
 	case m.view == viewProjects:
-		keys = []string{"enter open", "tab add", "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc quit"}
+		keys = []string{"enter/→ open", "tab add", "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc quit"}
 	case m.view == viewAdd:
 		keys = []string{"enter clone", "tab projects", "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc quit"}
 	case m.view == viewProject:
@@ -325,7 +325,7 @@ func (m *Model) hints() string {
 		case goKey:
 			keys = []string{"enter go there"}
 		case prsKey:
-			keys = []string{"enter open"}
+			keys = []string{"enter/→ open"}
 		}
 		keys = append(keys, "← projects", "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc quit")
 	default:

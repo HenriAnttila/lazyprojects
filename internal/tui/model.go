@@ -8,8 +8,8 @@
 //
 //	PRs       that project's open pull requests   enter: check out
 //
-// Each layer is entered with enter and left with the left arrow; esc closes pj
-// from anywhere. Launched inside a repo, pj opens on that project rather than
+// Each layer is entered with enter or the right arrow and left with the left
+// arrow; esc closes pj from anywhere. Launched inside a repo, pj opens on that project rather than
 // on the list.
 //
 // Typing always filters, as in fzf, so every action is Enter, Tab or a ctrl
@@ -282,6 +282,13 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 		return m.hover()
 	case "enter":
 		return m.enter()
+	case "right":
+		// The mirror of left: it only ever moves a layer in. Rows where enter
+		// acts instead (go there, clone, check out) are left to enter.
+		if r, _ := m.cur().selected(); m.view == viewProjects || r.key == prsKey {
+			return m.enter()
+		}
+		return nil
 	case "ctrl+o":
 		return m.browse()
 	case "ctrl+y":

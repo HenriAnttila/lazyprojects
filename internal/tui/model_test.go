@@ -117,6 +117,7 @@ func (f *fixture) press(keys ...string) {
 		"enter":     {Code: tea.KeyEnter},
 		"esc":       {Code: tea.KeyEscape},
 		"left":      {Code: tea.KeyLeft},
+		"right":     {Code: tea.KeyRight},
 		"tab":       {Code: tea.KeyTab},
 		"down":      {Code: tea.KeyDown},
 		"up":        {Code: tea.KeyUp},
@@ -237,6 +238,32 @@ func TestEscAlwaysQuits(t *testing.T) {
 		if !f.quit || f.Result != "" {
 			t.Errorf("esc on %s: quit=%v Result=%q", name, f.quit, f.Result)
 		}
+	}
+}
+
+func TestRightGoesALayerInButNeverActs(t *testing.T) {
+	f := newFixture(t, nil)
+	f.press("kompose", "right")
+	if f.view != viewProject || f.proj.Rel != "Kompell/kompose" {
+		t.Fatalf("right on a project: view=%v proj=%q", f.view, f.proj.Rel)
+	}
+	f.press("right") // on "Go to project": that is an action, not a layer
+	if f.quit || f.view != viewProject {
+		t.Fatalf("right on Go to project: quit=%v view=%v", f.quit, f.view)
+	}
+	f.press("down", "right")
+	if f.view != viewPRs {
+		t.Fatalf("right on Pull requests: view=%v", f.view)
+	}
+	f.press("right") // on a pull request: must not check it out
+	if f.quit || len(f.checked) != 0 {
+		t.Fatalf("right on a pull request: quit=%v checked=%v", f.quit, f.checked)
+	}
+
+	f = newFixture(t, nil)
+	f.press("tab", "right") // on a repo in Add: must not open the clone prompt
+	if f.prompt != nil || len(f.cloned) != 0 {
+		t.Fatalf("right in Add: prompt=%v cloned=%v", f.prompt, f.cloned)
 	}
 }
 
