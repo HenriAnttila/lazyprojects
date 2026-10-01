@@ -42,6 +42,46 @@ func TestSessionName(t *testing.T) {
 	}
 }
 
+// The cd is only typed into a pane that will read it as a command. A stand-in
+// tmux says what the pane is running and whether it is in copy mode.
+func TestPaneGetsACdOrANewWindow(t *testing.T) {
+	cd := []string{"send-keys -t %3 C-u", "send-keys -t %3 cd -- '/code/acme/website' Enter"}
+	window := []string{"new-window -a -t @7 -c /code/acme/website"}
+	for name, tc := range map[string]struct {
+		cmd, mode string
+		want      []string
+	}{
+		"a shell":              {"zsh", "0", cd},
+		"nvim":                 {"nvim", "0", window},
+		"a shell in copy mode": {"zsh", "1", window},
+	} {
+		t.Run(name, func(t *testing.T) {
+			bin, log := t.TempDir(), filepath.Join(t.TempDir(), "log")
+			fake := `#!/bin/sh
+case "$*" in
+  *pane_current_command*) echo "$FAKE_CMD" ;;
+  *pane_in_mode*) echo "$FAKE_MODE" ;;
+  *window_id*) echo "@7" ;;
+  *) echo "$*" >> "$FAKE_LOG" ;;
+esac
+`
+			os.WriteFile(filepath.Join(bin, "tmux"), []byte(fake), 0o755)
+			t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+			t.Setenv("FAKE_LOG", log)
+			t.Setenv("FAKE_CMD", tc.cmd)
+			t.Setenv("FAKE_MODE", tc.mode)
+
+			if err := (Target{Pane: "%3"}).Go("/code/acme/website"); err != nil {
+				t.Fatal(err)
+			}
+			out, _ := os.ReadFile(log)
+			if got := strings.TrimSpace(string(out)); got != strings.Join(tc.want, "\n") {
+				t.Fatalf("tmux was asked:\n%s\nwant:\n%s", got, strings.Join(tc.want, "\n"))
+			}
+		})
+	}
+}
+
 // A stand-in tmux records what it was asked to do, and answers has-session
 // with whatever $FAKE_HAS says.
 func TestSession(t *testing.T) {

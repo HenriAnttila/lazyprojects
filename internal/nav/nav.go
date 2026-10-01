@@ -3,7 +3,8 @@
 // A program cannot change the working directory of the shell that started it,
 // so one of three hand-offs is used, depending on how lazyprojects was launched:
 //
-//   - from a tmux popup, the cd is typed into the pane underneath (--pane);
+//   - from a tmux popup, the cd is typed into the pane underneath (--pane), or
+//     a new window is opened there when that pane is not at a shell prompt;
 //   - from the shell function printed by `lazyprojects init`, the path is written to a
 //     file the function reads and cds to (--cd-file);
 //   - with neither, the path is printed, which is the best a bare binary can do.
@@ -53,8 +54,8 @@ type Target struct {
 	CdFile string // file the shell wrapper reads the path from
 }
 
-// shells are the pane commands that will read a typed `cd` as a command. In
-// anything else (nvim, claude, lazygit) the keystrokes would land as input.
+// shells are the pane commands that will read a typed `cd` as a command.
+// Anything else (nvim, claude, lazygit) gets a new window instead.
 var shells = map[string]bool{
 	"zsh": true, "bash": true, "sh": true, "fish": true, "dash": true, "ksh": true, "tcsh": true,
 }
@@ -77,11 +78,20 @@ func (t Target) tmux(dir string) error {
 	if err != nil {
 		return fmt.Errorf("tmux pane %s: %w", t.Pane, err)
 	}
-	if !shells[cmd] {
-		return fmt.Errorf("pane is running %s, not a shell; cd there yourself:\n  %s", cmd, dir)
-	}
-	if mode, _ := tmuxOut("display", "-p", "-t", t.Pane, "#{pane_in_mode}"); mode != "0" {
-		return fmt.Errorf("pane is in copy mode; press q, then cd there yourself:\n  %s", dir)
+	mode, _ := tmuxOut("display", "-p", "-t", t.Pane, "#{pane_in_mode}")
+	// A pane that cannot take a typed cd is left alone, and the project opens
+	// in a new window next to it instead: in anything but a shell the keys
+	// would land as input, and in copy mode as copy commands.
+	if !shells[cmd] || mode != "0" {
+		// new-window takes a window, not a pane, as its target.
+		window, err := tmuxOut("display", "-p", "-t", t.Pane, "#{window_id}")
+		if err != nil {
+			return fmt.Errorf("tmux pane %s: %w", t.Pane, err)
+		}
+		if out, err := exec.Command("tmux", "new-window", "-a", "-t", window, "-c", dir).CombinedOutput(); err != nil {
+			return fmt.Errorf("tmux new-window: %s", strings.TrimSpace(string(out)))
+		}
+		return nil
 	}
 	// C-u first, so a half-typed command is discarded rather than having the
 	// cd appended to it.
