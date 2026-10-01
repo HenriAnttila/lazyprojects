@@ -8,12 +8,18 @@ a layer in, the left arrow a layer out, and esc closes pj from anywhere.
 |---|---|---|
 | **Projects** | every git repo under the root | open that project |
 | **Add** | your GitHub repos that are not cloned yet, last pushed first | clone, then go there |
-| **Project** | what you can do with it: go there, pull requests | do it |
+| **Project** | what you can do with it: go there, pull requests, open on GitHub, delete | do it |
 | **Pull requests** | that project's open pull requests | check out |
 
-Projects and Add are the first layer, switched with tab. "Go to project" is not
-offered for the project you are already in, and "Pull requests" only for
-projects on GitHub. Run inside a repo, pj opens on that project.
+Projects and Add are the first layer, switched with tab. "Go to project" and
+"Delete project" are not offered for the project you are already in, and the
+GitHub rows only for projects on GitHub. Run inside a repo, pj opens on that
+project.
+
+Delete removes the directory for good. Before it does, it lists what exists
+nowhere else (uncommitted files, unpushed commits, stashes, ignored files such
+as `.env`, a project with no remote) and, if there is any, asks for the
+project's name typed out.
 
 Typing always filters. Rows containing what you typed come first in their
 original order; looser fuzzy matches follow.

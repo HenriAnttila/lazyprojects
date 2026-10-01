@@ -127,3 +127,100 @@ func TestDirty(t *testing.T) {
 		t.Fatalf("two untracked files: Dirty = %d, %v", n, err)
 	}
 }
+
+func gitIn(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"}, args...)...)
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+func commit(t *testing.T, dir, file string) {
+	t.Helper()
+	os.WriteFile(filepath.Join(dir, file), []byte(file), 0o644)
+	gitIn(t, dir, "add", file)
+	gitIn(t, dir, "commit", "-q", "-m", file)
+}
+
+func TestAssess(t *testing.T) {
+	base := t.TempDir()
+	remote := filepath.Join(base, "remote.git")
+	os.MkdirAll(remote, 0o755)
+	gitIn(t, remote, "init", "-q", "--bare", "-b", "main")
+
+	dir := filepath.Join(base, "work")
+	initRepo(t, dir, remote)
+	commit(t, dir, "a")
+	gitIn(t, dir, "push", "-q", "-u", "origin", "main")
+
+	r, err := Assess(dir)
+	if err != nil || !r.Safe() {
+		t.Fatalf("pushed and clean: %+v, %v", r, err)
+	}
+
+	// One of everything that would be lost.
+	commit(t, dir, "b")                                             // unpushed on main
+	gitIn(t, dir, "branch", "side")                                 // and on a second branch
+	os.WriteFile(filepath.Join(dir, "a"), []byte("changed"), 0o644) // to stash
+	gitIn(t, dir, "stash", "-q")                                    //
+	os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(".env\nbuild/\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, ".env"), []byte("SECRET=1"), 0o644) // ignored file
+	os.MkdirAll(filepath.Join(dir, "build"), 0o755)                     // ignored directory: not a loss
+	os.WriteFile(filepath.Join(dir, "build", "out"), nil, 0o644)
+
+	r, err = Assess(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Safe() || r.NoRemote || r.Dirty != 1 || r.Stashes != 1 {
+		t.Errorf("risk = %+v", r)
+	}
+	if !reflect.DeepEqual(r.Unpushed, []string{"main (1 commit)", "side (1 commit)"}) {
+		t.Errorf("Unpushed = %v", r.Unpushed)
+	}
+	if !reflect.DeepEqual(r.Ignored, []string{".env"}) {
+		t.Errorf("Ignored = %v", r.Ignored)
+	}
+
+	local := filepath.Join(base, "local")
+	initRepo(t, local, "")
+	commit(t, local, "a")
+	commit(t, local, "b")
+	if r, _ := Assess(local); !r.NoRemote || r.Commits != 2 || r.Safe() {
+		t.Errorf("no remote: %+v", r)
+	}
+	if _, err := Assess(base); err == nil {
+		t.Error("Assess outside a repo should fail")
+	}
+}
+
+func TestDelete(t *testing.T) {
+	root := t.TempDir()
+	repo := filepath.Join(root, "Kompell", "kompose")
+	initRepo(t, repo, "")
+	os.MkdirAll(filepath.Join(root, "plain"), 0o755)
+	outside := filepath.Join(t.TempDir(), "elsewhere")
+	initRepo(t, outside, "")
+
+	for _, dir := range []string{root, filepath.Join(root, "Kompell"), filepath.Join(root, "plain"), outside, filepath.Join(root, "..")} {
+		if err := Delete(root, dir); err == nil {
+			t.Errorf("Delete(%s) should have been refused", dir)
+		}
+	}
+	for _, dir := range []string{root, filepath.Join(root, "Kompell"), filepath.Join(root, "plain"), outside, repo} {
+		if _, err := os.Stat(dir); err != nil {
+			t.Fatalf("%s is gone after refused deletes", dir)
+		}
+	}
+	if err := Delete(root, repo); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(repo); !os.IsNotExist(err) {
+		t.Fatalf("%s still exists", repo)
+	}
+	if _, err := os.Stat(filepath.Join(root, "Kompell")); err != nil {
+		t.Fatal("the container was removed along with the project")
+	}
+}

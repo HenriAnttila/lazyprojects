@@ -219,3 +219,79 @@ func git(dir string, args ...string) (string, error) {
 	}
 	return strings.TrimRight(stdout.String(), "\n"), nil
 }
+
+// Risk is what deleting a project's directory would lose: everything in it
+// that exists nowhere else.
+type Risk struct {
+	NoRemote bool     // no origin at all: the directory is the only copy
+	Commits  int      // with NoRemote, how many commits that is
+	Dirty    int      // uncommitted or untracked paths
+	Unpushed []string // "branch (2 commits)" for commits on no remote
+	Stashes  int
+	Ignored  []string // ignored files, e.g. .env; ignored directories are build output
+}
+
+// Safe reports whether nothing would be lost.
+func (r Risk) Safe() bool {
+	return !r.NoRemote && r.Dirty == 0 && len(r.Unpushed) == 0 && r.Stashes == 0 && len(r.Ignored) == 0
+}
+
+// Assess inspects a project before it is deleted. It reads what the clone
+// already knows and does not fetch, so "pushed" means pushed as of the last
+// time this clone talked to its remote.
+func Assess(dir string) (Risk, error) {
+	var r Risk
+	if _, err := git(dir, "rev-parse", "--git-dir"); err != nil {
+		return r, fmt.Errorf("%s is not a git repo", dir)
+	}
+	if n, err := Dirty(dir); err == nil {
+		r.Dirty = n
+	}
+	if out, _ := git(dir, "stash", "list"); out != "" {
+		r.Stashes = strings.Count(out, "\n") + 1
+	}
+	// Ignored files (not directories, which are node_modules and build
+	// output) are typically local config and secrets that are in no commit.
+	if out, _ := git(dir, "--no-optional-locks", "status", "--porcelain", "--ignored"); out != "" {
+		for _, line := range strings.Split(out, "\n") {
+			if name, ok := strings.CutPrefix(line, "!! "); ok && !strings.HasSuffix(name, "/") {
+				r.Ignored = append(r.Ignored, name)
+			}
+		}
+	}
+	if _, err := git(dir, "config", "--get", "remote.origin.url"); err != nil {
+		r.NoRemote = true
+		if out, err := git(dir, "rev-list", "--count", "--all"); err == nil {
+			fmt.Sscan(out, &r.Commits)
+		}
+		return r, nil
+	}
+	branches, _ := git(dir, "for-each-ref", "--format=%(refname:short)", "refs/heads")
+	for _, b := range strings.Fields(branches) {
+		out, err := git(dir, "rev-list", "--count", b, "--not", "--remotes")
+		var n int
+		if err != nil {
+			continue
+		}
+		if fmt.Sscan(out, &n); n == 1 {
+			r.Unpushed = append(r.Unpushed, b+" (1 commit)")
+		} else if n > 1 {
+			r.Unpushed = append(r.Unpushed, fmt.Sprintf("%s (%d commits)", b, n))
+		}
+	}
+	return r, nil
+}
+
+// Delete removes a project's directory for good. It refuses anything that is
+// not a git repo strictly inside the root, so a wrong path cannot take the
+// root, a container, or something outside it.
+func Delete(root, dir string) error {
+	rel, err := filepath.Rel(root, dir)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return fmt.Errorf("refusing to delete %s: not inside %s", dir, root)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, ".git")); err != nil {
+		return fmt.Errorf("refusing to delete %s: not a git repo", dir)
+	}
+	return os.RemoveAll(dir)
+}

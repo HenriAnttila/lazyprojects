@@ -51,6 +51,16 @@ type (
 		number int
 		err    error
 	}
+	riskMsg struct {
+		path  string
+		risk  projects.Risk
+		panes int
+		err   error
+	}
+	deletedMsg struct {
+		path string
+		err  error
+	}
 	noticeMsg struct {
 		text string
 		err  error
@@ -158,6 +168,34 @@ func (m *Model) checkoutCmd(ctx context.Context, dir string, number int) tea.Cmd
 	return func() tea.Msg {
 		return checkoutMsg{dir, number, checkout(ctx, dir, number)}
 	}
+}
+
+func (m *Model) riskCmd(path string) tea.Cmd {
+	assess := m.opts.Assess
+	return func() tea.Msg {
+		risk, err := assess(path)
+		return riskMsg{path: path, risk: risk, panes: panesIn(path), err: err}
+	}
+}
+
+func (m *Model) deleteCmd(path string) tea.Cmd {
+	remove, root := m.opts.Delete, m.opts.Root
+	return func() tea.Msg { return deletedMsg{path, remove(root, path)} }
+}
+
+// panesIn counts tmux panes whose shell is inside dir. Outside tmux, or with
+// no server running, that is none.
+func panesIn(dir string) (n int) {
+	out, err := exec.Command("tmux", "list-panes", "-a", "-F", "#{pane_current_path}").Output()
+	if err != nil {
+		return 0
+	}
+	for _, p := range strings.Fields(string(out)) {
+		if within(p, dir) {
+			n++
+		}
+	}
+	return n
 }
 
 func (m *Model) browseCmd(args ...string) tea.Cmd {

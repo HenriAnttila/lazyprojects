@@ -43,6 +43,8 @@ const (
 const (
 	goKey  = "go"
 	prsKey = "prs"
+	webKey = "web"
+	delKey = "delete"
 )
 
 type Options struct {
@@ -64,6 +66,8 @@ type Options struct {
 
 	Clone    func(ctx context.Context, slug, target string, progress func(string)) error
 	Checkout func(ctx context.Context, dir string, number int) error
+	Assess   func(dir string) (projects.Risk, error)
+	Delete   func(root, dir string) error
 	Now      func() time.Time
 }
 
@@ -93,7 +97,8 @@ type Model struct {
 	scroll   int // preview scroll offset
 	hoverSeq int
 
-	prompt *prompt
+	prompt  *prompt
+	confirm *confirm
 
 	busy     string // what is running; keys are ignored while set
 	progress string
@@ -114,6 +119,12 @@ func New(opts Options) *Model {
 	}
 	if opts.Checkout == nil {
 		opts.Checkout = Checkout
+	}
+	if opts.Assess == nil {
+		opts.Assess = projects.Assess
+	}
+	if opts.Delete == nil {
+		opts.Delete = projects.Delete
 	}
 	if opts.Now == nil {
 		opts.Now = time.Now
@@ -163,7 +174,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.key(msg)
 
 	case tea.PasteMsg:
-		if m.busy == "" && m.prompt == nil {
+		if m.busy == "" && m.prompt == nil && m.confirm == nil {
 			line, _, _ := strings.Cut(strings.TrimSpace(msg.Content), "\n")
 			return m, m.setQuery(m.cur().query + line)
 		}
@@ -206,6 +217,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case cloneMsg:
 		return m, m.cloned(msg)
+
+	case riskMsg:
+		if c := m.confirm; c != nil && c.proj.Path == msg.path {
+			if msg.err != nil {
+				m.confirm = nil
+				m.fail(msg.err)
+				break
+			}
+			c.risk, c.panes = &msg.risk, msg.panes
+		}
+
+	case deletedMsg:
+		m.deleted(msg)
+		return m, m.hover()
 
 	case checkoutMsg:
 		return m, m.checkedOut(msg)
@@ -252,6 +277,9 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 	m.status, m.statusErr = "", false
 	if m.prompt != nil {
 		return m.promptKey(msg)
+	}
+	if m.confirm != nil {
+		return m.confirmKey(msg)
 	}
 
 	before := m.cur().selectedKey()
@@ -413,6 +441,10 @@ func (m *Model) enter() tea.Cmd {
 		case prsKey:
 			m.openPRs()
 			return tea.Batch(m.prsCmd(), m.hover())
+		case webKey:
+			return m.browse()
+		case delKey:
+			return m.openConfirm()
 		}
 	case viewPRs:
 		if pr, ok := m.pr(r.key); ok {
@@ -572,8 +604,16 @@ func (m *Model) rebuild() {
 	if !within(m.opts.Cwd, m.proj.Path) { // no point offering to go where you are
 		rows = append(rows, row{key: goKey, name: "Go to project"})
 	}
+	inside := within(m.opts.Cwd, m.proj.Path)
 	if m.proj.IsGitHub() {
-		rows = append(rows, row{key: prsKey, name: "Pull requests"})
+		rows = append(rows,
+			row{key: prsKey, name: "Pull requests"},
+			row{key: webKey, name: "Open on GitHub"})
+	}
+	// Not from inside it, which would leave the shell in a deleted directory;
+	// and only under the root, where pj is the one managing what exists.
+	if !inside && within(m.proj.Path, m.opts.Root) && m.proj.Path != m.opts.Root {
+		rows = append(rows, row{key: delKey, name: "Delete project"})
 	}
 	m.pick[viewProject].setRows(rows)
 

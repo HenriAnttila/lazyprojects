@@ -47,7 +47,7 @@ func (m *Model) render() string {
 	h := m.bodyHeight()
 
 	var body []string
-	full := m.prompt != nil || m.errorDetail()
+	full := m.prompt != nil || m.confirm != nil || m.errorDetail()
 	switch {
 	case m.errorDetail():
 		// git's own output, in full: one status line cannot hold it, and which
@@ -58,6 +58,8 @@ func (m *Model) render() string {
 		}
 	case m.prompt != nil:
 		body = m.promptLines()
+	case m.confirm != nil:
+		body = m.confirmLines()
 	default:
 		list := m.listLines(listW, h)
 		if prevW == 0 {
@@ -124,7 +126,9 @@ func (m *Model) filterLine() string {
 	p := m.cur()
 	left := " " + sAccent.Render(">") + " " + p.query
 	if m.prompt == nil && m.busy == "" {
-		left += sCursor.Render(" ")
+		if m.confirm == nil {
+			left += sCursor.Render(" ")
+		}
 	}
 	count := fmt.Sprintf("%d/%d", len(p.matches), len(p.rows))
 	if m.view == viewPRs && len(m.prs) >= github.PRLimit {
@@ -316,6 +320,8 @@ func (m *Model) hints() string {
 		keys = []string{"ctrl-c cancel"}
 	case m.prompt != nil:
 		keys = []string{"enter clone", "tab next container", "← cancel", "esc quit"}
+	case m.confirm != nil:
+		keys = []string{"enter delete", "← cancel", "esc quit"}
 	case m.view == viewProjects:
 		keys = []string{"enter/→ open", "tab add", "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc quit"}
 	case m.view == viewAdd:
@@ -326,6 +332,10 @@ func (m *Model) hints() string {
 			keys = []string{"enter go there"}
 		case prsKey:
 			keys = []string{"enter/→ open"}
+		case webKey:
+			keys = []string{"enter open in browser"}
+		case delKey:
+			keys = []string{"enter delete…"}
 		}
 		keys = append(keys, "← projects", "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc quit")
 	default:

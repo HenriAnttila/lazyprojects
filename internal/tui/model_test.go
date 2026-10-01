@@ -30,6 +30,9 @@ type fixture struct {
 	cloneErr error
 	checkErr error
 	ghCalls  []string
+	risk     projects.Risk
+	deleted  []string
+	delErr   error
 }
 
 // newFixture builds a model over a temp root holding Kompell/kompose (cloned)
@@ -76,6 +79,13 @@ func newFixture(t *testing.T, tweak func(*Options)) *fixture {
 		Checkout: func(_ context.Context, dir string, number int) error {
 			f.checked = append(f.checked, dir+" #"+string(rune('0'+number)))
 			return f.checkErr
+		},
+		Assess: func(string) (projects.Risk, error) { return f.risk, nil },
+		Delete: func(_, dir string) error {
+			if f.delErr == nil {
+				f.deleted = append(f.deleted, dir)
+			}
+			return f.delErr
 		},
 		Now: func() time.Time { return now },
 	}
@@ -178,7 +188,7 @@ func TestEnterOpensTheProjectAndEnterAgainGoesThere(t *testing.T) {
 		t.Fatalf("after first enter: quit=%v view=%v proj=%q", f.quit, f.view, f.proj.Rel)
 	}
 	// Not on GitHub, so pull requests are not offered.
-	equal(t, "options", f.names(), []string{"Go to project"})
+	equal(t, "options", f.names(), []string{"Go to project", "Delete project"})
 	f.press("enter")
 	if !f.quit || f.Result != filepath.Join(f.root, "local") {
 		t.Fatalf("after second enter: quit=%v Result=%q", f.quit, f.Result)
@@ -197,7 +207,7 @@ func prCalls(f *fixture) (n int) {
 func TestPullRequestsAreAnOptionOnTheProject(t *testing.T) {
 	f := newFixture(t, nil)
 	f.press("kompose", "enter")
-	equal(t, "options", f.names(), []string{"Go to project", "Pull requests"})
+	equal(t, "options", f.names(), []string{"Go to project", "Pull requests", "Open on GitHub", "Delete project"})
 	if n := prCalls(f); n != 0 {
 		t.Fatalf("fetched pull requests %d times before they were asked for", n)
 	}
@@ -227,6 +237,7 @@ func TestEscAlwaysQuits(t *testing.T) {
 		"a project":           {"kompose", "enter"},
 		"its pull requests":   {"kompose", "enter", "down", "enter"},
 		"the clone prompt":    {"tab", "enter"},
+		"the delete screen":   {"local", "enter", "down", "enter"},
 		"a dismissable error": nil,
 	} {
 		f := newFixture(t, nil)
@@ -358,8 +369,9 @@ func TestLaunchedInsideAProjectOpensIt(t *testing.T) {
 	if f.view != viewProject || f.proj.Rel != "Kompell/kompose" {
 		t.Fatalf("view=%v proj=%q", f.view, f.proj.Rel)
 	}
-	// Already there, so going there is not offered; and nothing is fetched yet.
-	equal(t, "options", f.names(), []string{"Pull requests"})
+	// Already there, so going there is not offered, nor is deleting the
+	// directory the shell is standing in; and nothing is fetched yet.
+	equal(t, "options", f.names(), []string{"Pull requests", "Open on GitHub"})
 	if n := prCalls(f); n != 0 {
 		t.Fatalf("fetched pull requests %d times at launch", n)
 	}
@@ -451,6 +463,84 @@ func TestCloneNeverChecksAnythingOut(t *testing.T) {
 	if len(f.cloned) != 1 || len(f.checked) != 0 || !f.quit {
 		t.Fatalf("cloned=%v checked=%v quit=%v", f.cloned, f.checked, f.quit)
 	}
+}
+
+func TestOpenOnGitHubRow(t *testing.T) {
+	f := newFixture(t, nil)
+	f.press("kompose", "enter", "down", "down", "enter")
+	if last := f.ghCalls[len(f.ghCalls)-1]; last != "repo view Kompell/kompose --web" {
+		t.Fatalf("last gh call = %q", last)
+	}
+	if f.quit || f.view != viewProject {
+		t.Fatalf("quit=%v view=%v", f.quit, f.view)
+	}
+}
+
+func TestDeleteWithNothingToLoseTakesOneEnter(t *testing.T) {
+	f := newFixture(t, nil)
+	f.press("local", "enter", "down", "enter")
+	if f.confirm == nil || len(f.deleted) != 0 {
+		t.Fatalf("confirm=%v deleted=%v", f.confirm, f.deleted)
+	}
+	if out := ansi.Strip(f.render()); !strings.Contains(out, "Nothing here would be lost") {
+		t.Fatalf("confirm screen:\n%s", out)
+	}
+	f.press("enter")
+	equal(t, "deleted", f.deleted, []string{filepath.Join(f.root, "local")})
+	if f.quit || f.view != viewProjects || f.confirm != nil || !strings.Contains(f.status, "deleted local") {
+		t.Fatalf("quit=%v view=%v confirm=%v status=%q", f.quit, f.view, f.confirm, f.status)
+	}
+	equal(t, "projects left", f.names(), []string{"Kompell/kompose"})
+}
+
+func TestDeleteWithSomethingToLoseNeedsTheNameTyped(t *testing.T) {
+	f := newFixture(t, nil)
+	f.risk = projects.Risk{Dirty: 2, Unpushed: []string{"main (3 commits)"}, Stashes: 1, Ignored: []string{".env"}}
+	f.press("kompose", "enter", "down", "down", "down", "enter")
+	out := ansi.Strip(f.render())
+	for _, want := range []string{"2 uncommitted or untracked files", "not pushed: main (3 commits)", "1 stash", ".env", "type kompose to delete"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q:\n%s", want, out)
+		}
+	}
+	f.press("enter")
+	if len(f.deleted) != 0 || f.confirm == nil || f.confirm.err == "" {
+		t.Fatalf("deleted=%v confirm=%+v", f.deleted, f.confirm)
+	}
+	f.press("kompos", "enter") // one letter short
+	if len(f.deleted) != 0 {
+		t.Fatalf("deleted on a partial name: %v", f.deleted)
+	}
+	f.press("e", "enter")
+	equal(t, "deleted", f.deleted, []string{filepath.Join(f.root, "Kompell", "kompose")})
+	// Back in Add now that it is no longer on disk.
+	f.press("tab")
+	equal(t, "Add rows", f.names(), []string{"Kompell/claude", "kompell/Kompose", "HenriAnttila/compiler", "ikiuscompany/kompass"})
+}
+
+func TestDeleteNeverRunsOnAnUnfinishedCheckOrAfterCancel(t *testing.T) {
+	f := newFixture(t, nil)
+	f.press("local", "enter", "down", "enter")
+	f.confirm.risk = nil // as if git had not answered yet
+	f.press("enter")
+	if len(f.deleted) != 0 || f.confirm == nil {
+		t.Fatalf("deleted before the check finished: %v", f.deleted)
+	}
+	f.press("left")
+	if f.confirm != nil || f.view != viewProject || len(f.deleted) != 0 || f.quit {
+		t.Fatalf("after cancel: confirm=%v view=%v deleted=%v", f.confirm, f.view, f.deleted)
+	}
+}
+
+func TestDeleteFailureIsReported(t *testing.T) {
+	f := newFixture(t, nil)
+	f.delErr = errors.New("permission denied")
+	f.press("local", "enter", "down", "enter", "enter")
+	if !f.statusErr || !strings.Contains(f.status, "permission denied") || f.busy != "" {
+		t.Fatalf("status=%q busy=%q", f.status, f.busy)
+	}
+	f.press("left")
+	equal(t, "projects still listed", f.names(), []string{"local"})
 }
 
 func TestKeysAreIgnoredWhileBusyAndCtrlCCancels(t *testing.T) {
