@@ -175,25 +175,41 @@ func TestEnterOpensTheProjectAndEnterAgainGoesThere(t *testing.T) {
 	if f.quit || f.view != viewProject || f.proj.Rel != "local" {
 		t.Fatalf("after first enter: quit=%v view=%v proj=%q", f.quit, f.view, f.proj.Rel)
 	}
-	equal(t, "rows of a project that is not on GitHub", f.names(), []string{"Go to project"})
-	if out := ansi.Strip(f.render()); !strings.Contains(out, "not on GitHub") {
-		t.Fatalf("no explanation for the missing pull requests:\n%s", out)
-	}
+	// Not on GitHub, so pull requests are not offered.
+	equal(t, "options", f.names(), []string{"Go to project"})
 	f.press("enter")
 	if !f.quit || f.Result != filepath.Join(f.root, "local") {
 		t.Fatalf("after second enter: quit=%v Result=%q", f.quit, f.Result)
 	}
 }
 
-func TestProjectViewListsItsPullRequests(t *testing.T) {
+func prCalls(f *fixture) (n int) {
+	for _, call := range f.ghCalls {
+		if strings.HasPrefix(call, "pr ") {
+			n++
+		}
+	}
+	return n
+}
+
+func TestPullRequestsAreAnOptionOnTheProject(t *testing.T) {
 	f := newFixture(t, nil)
 	f.press("kompose", "enter")
-	equal(t, "rows", f.names(), []string{"Go to project", "#7 Add thing"})
-	if out := ansi.Strip(f.render()); !strings.Contains(out, "Projects › Kompell/kompose") {
-		t.Fatalf("no breadcrumb:\n%s", out)
+	equal(t, "options", f.names(), []string{"Go to project", "Pull requests"})
+	if n := prCalls(f); n != 0 {
+		t.Fatalf("fetched pull requests %d times before they were asked for", n)
 	}
 
 	f.press("down", "enter")
+	if f.view != viewPRs || prCalls(f) != 1 {
+		t.Fatalf("view=%v prCalls=%d", f.view, prCalls(f))
+	}
+	equal(t, "pull requests", f.names(), []string{"#7 Add thing"})
+	if out := ansi.Strip(f.render()); !strings.Contains(out, "Projects › Kompell/kompose › Pull requests") {
+		t.Fatalf("no breadcrumb:\n%s", out)
+	}
+
+	f.press("enter")
 	dir := filepath.Join(f.root, "Kompell", "kompose")
 	equal(t, "checkouts", f.checked, []string{dir + " #7"})
 	if !f.quit || f.Result != dir {
@@ -201,11 +217,18 @@ func TestProjectViewListsItsPullRequests(t *testing.T) {
 	}
 }
 
-func TestEscBacksOutOfAProjectToTheList(t *testing.T) {
+func TestEscBacksOutOneLayerAtATime(t *testing.T) {
 	f := newFixture(t, nil)
-	f.press("kompose", "enter", "esc")
+	f.press("kompose", "enter", "down", "enter", "esc")
+	if f.quit || f.view != viewProject {
+		t.Fatalf("esc from pull requests: quit=%v view=%v", f.quit, f.view)
+	}
+	if r, _ := f.cur().selected(); r.key != prsKey {
+		t.Fatalf("cursor came back on %q", r.name)
+	}
+	f.press("esc")
 	if f.quit || f.view != viewProjects {
-		t.Fatalf("quit=%v view=%v", f.quit, f.view)
+		t.Fatalf("esc from the project: quit=%v view=%v", f.quit, f.view)
 	}
 	if r, _ := f.cur().selected(); r.name != "Kompell/kompose" {
 		t.Fatalf("cursor came back on %q", r.name)
@@ -213,18 +236,6 @@ func TestEscBacksOutOfAProjectToTheList(t *testing.T) {
 	f.press("tab")
 	if f.view != viewAdd {
 		t.Fatalf("tab from the list: view=%v", f.view)
-	}
-}
-
-func TestEscClearsFilterBeforeQuitting(t *testing.T) {
-	f := newFixture(t, nil)
-	f.press("x", "esc")
-	if f.quit || f.cur().query != "" {
-		t.Fatalf("first esc: quit=%v query=%q", f.quit, f.cur().query)
-	}
-	f.press("esc")
-	if !f.quit || f.Result != "" {
-		t.Fatalf("second esc: quit=%v Result=%q", f.quit, f.Result)
 	}
 }
 
@@ -289,8 +300,11 @@ func TestLaunchedInsideAProjectOpensIt(t *testing.T) {
 	if f.view != viewProject || f.proj.Rel != "Kompell/kompose" {
 		t.Fatalf("view=%v proj=%q", f.view, f.proj.Rel)
 	}
-	// Already there, so there is no row offering to go there.
-	equal(t, "rows", f.names(), []string{"#7 Add thing"})
+	// Already there, so going there is not offered; and nothing is fetched yet.
+	equal(t, "options", f.names(), []string{"Pull requests"})
+	if n := prCalls(f); n != 0 {
+		t.Fatalf("fetched pull requests %d times at launch", n)
+	}
 
 	f.press("tab") // not part of the tab cycle
 	if f.view != viewProject {
@@ -306,12 +320,12 @@ func TestLaunchedInsideAProjectOpensIt(t *testing.T) {
 	}
 }
 
-func TestInsideAProjectWithNothingToList(t *testing.T) {
+func TestInsideAProjectWithNothingToOffer(t *testing.T) {
 	f := newFixture(t, func(o *Options) {
 		o.Here = &o.Projects[1] // "local": no remote, so no pull requests
 		o.Cwd = o.Projects[1].Path
 	})
-	equal(t, "rows", f.names(), nil)
+	equal(t, "options", f.names(), nil)
 	out := ansi.Strip(f.render())
 	for _, want := range []string{"Projects › local", "not on GitHub", "no remote"} {
 		if !strings.Contains(out, want) {
@@ -340,11 +354,12 @@ func TestOutsideAProjectStartsOnTheListAndFetchesNoPRs(t *testing.T) {
 	}
 }
 
-func TestPRCommandLandsOnTheFirstPullRequest(t *testing.T) {
+func TestPRCommandOpensOnThePullRequests(t *testing.T) {
 	f := newFixture(t, inRepo(true))
-	if r, _ := f.cur().selected(); r.name != "#7 Add thing" {
-		t.Fatalf("cursor on %q", r.name)
+	if f.view != viewPRs {
+		t.Fatalf("view=%v", f.view)
 	}
+	equal(t, "pull requests", f.names(), []string{"#7 Add thing"})
 	f.press("enter")
 	equal(t, "checkouts", f.checked, []string{filepath.Join(f.root, "Kompell", "kompose") + " #7"})
 	// Already inside the repo: nothing to cd to.
@@ -371,9 +386,9 @@ func TestCheckoutFailureLeavesYouInThePicker(t *testing.T) {
 
 func TestStalePRAnswerIsDropped(t *testing.T) {
 	f := newFixture(t, nil)
-	f.press("kompose", "enter")
+	f.press("kompose", "enter", "down", "enter")
 	f.send(prsMsg{seq: f.prSeq - 1, prs: []github.PR{{Number: 99, Title: "from another project"}}})
-	equal(t, "rows", f.names(), []string{"Go to project", "#7 Add thing"})
+	equal(t, "pull requests", f.names(), []string{"#7 Add thing"})
 }
 
 func TestCloneNeverChecksAnythingOut(t *testing.T) {
@@ -402,8 +417,8 @@ func TestRenderFitsTheTerminal(t *testing.T) {
 	for _, size := range [][2]int{{120, 30}, {60, 12}, {20, 5}, {200, 60}} {
 		f := newFixture(t, inRepo(false))
 		f.send(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
-		// project view, PR row, list, Add, clone prompt
-		for _, keys := range [][]string{nil, {"down"}, {"esc"}, {"tab"}, {"enter"}} {
+		// project, its pull requests, the list, Add, the clone prompt
+		for _, keys := range [][]string{nil, {"enter"}, {"esc", "esc"}, {"tab"}, {"enter"}} {
 			f.press(keys...)
 			lines := strings.Split(f.render(), "\n")
 			if len(lines) != max(size[1], chrome+1) {

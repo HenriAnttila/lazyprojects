@@ -22,7 +22,7 @@ commands:
   (none)        the project you are in, or the list of projects under the root
   projects      the list of projects, even from inside one
   add           pick a GitHub repo to clone into the root
-  pr            the project you are in, with the cursor on its pull requests
+  pr            the pull requests of the project you are in
   init <shell>  print the shell function that lets pj change directory
                 (zsh, bash, sh, fish); add  eval "$(pj init zsh)"  to your rc
 

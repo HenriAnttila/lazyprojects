@@ -1,23 +1,19 @@
 # pj
 
-A project manager for a directory of git repos, in two layers that share one
-layout (filter on top, list left, preview right).
+A project manager for a directory of git repos, in layers that share one
+layout (filter on top, list left, preview right). Enter goes a layer in, esc a
+layer out.
 
-The first layer is about which project:
-
-| View | Shows | Enter |
+| Layer | Shows | Enter |
 |---|---|---|
 | **Projects** | every git repo under the root | open that project |
 | **Add** | your GitHub repos that are not cloned yet, last pushed first | clone, then go there |
+| **Project** | what you can do with it: go there, pull requests | do it |
+| **Pull requests** | that project's open pull requests | check out |
 
-The second is one project:
-
-| View | Shows | Enter |
-|---|---|---|
-| **Project** | a "Go to project" row (unless you are already in it), then its open pull requests | go there / check the PR out |
-
-Run inside a repo, pj opens straight onto that project; esc backs out to the
-list.
+Projects and Add are the first layer, switched with tab. "Go to project" is not
+offered for the project you are already in, and "Pull requests" only for
+projects on GitHub. Run inside a repo, pj opens on that project.
 
 Typing always filters. Rows containing what you typed come first in their
 original order; looser fuzzy matches follow.
@@ -62,7 +58,7 @@ Without either, pj prints the path.
     pj            the project you are in, or the list when you are not in one
     pj projects   the list, even from inside a project
     pj add        start on the Add view
-    pj pr         the project you are in, cursor on its first pull request
+    pj pr         the pull requests of the project you are in
 
 ## Keys
 
@@ -75,7 +71,7 @@ Without either, pj prints the path.
 | `ctrl-y` | copy the URL |
 | `pgup` `pgdn` | scroll the preview |
 | `ctrl-u` | clear the filter |
-| `esc` | clear the filter, leave the project view, or quit |
+| `esc` | clear the filter, go back a layer, or quit |
 | `ctrl-c` | cancel a running clone or checkout; otherwise quit |
 
 ## Code
