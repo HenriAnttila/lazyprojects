@@ -17,12 +17,11 @@ type prompt struct {
 	input      string
 	options    []string // owner first, then existing containers, then "" for the root
 	option     int
-	pr         int    // PR to check out once cloned; 0 for a plain clone
 	target     string // set once the clone starts
 	err        string
 }
 
-func (m *Model) openPrompt(slug string, pr int) {
+func (m *Model) openPrompt(slug string) {
 	owner, name, _ := strings.Cut(slug, "/")
 	options := []string{owner}
 	for _, c := range projects.Containers(m.opts.Root) {
@@ -31,7 +30,7 @@ func (m *Model) openPrompt(slug string, pr int) {
 		}
 	}
 	options = append(options, "")
-	m.prompt = &prompt{slug: slug, name: name, input: owner, options: options, pr: pr}
+	m.prompt = &prompt{slug: slug, name: name, input: owner, options: options}
 }
 
 func (m *Model) promptKey(msg tea.KeyPressMsg) tea.Cmd {

@@ -30,7 +30,6 @@ type (
 		err   error
 	}
 	prsMsg struct {
-		seq int
 		prs []github.PR
 		err error
 	}
@@ -98,13 +97,13 @@ func (m *Model) reposCmd() tea.Cmd {
 	}
 }
 
-func (m *Model) prsCmd(seq int, slug string) tea.Cmd {
-	client := m.opts.Client
+func (m *Model) prsCmd() tea.Cmd {
+	client, slug := m.opts.Client, m.opts.Here.Slug()
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		prs, err := client.PRs(ctx, slug)
-		return prsMsg{seq, prs, err}
+		return prsMsg{prs, err}
 	}
 }
 

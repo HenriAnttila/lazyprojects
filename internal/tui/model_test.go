@@ -120,7 +120,6 @@ func (f *fixture) press(keys ...string) {
 		"down":      {Code: tea.KeyDown},
 		"up":        {Code: tea.KeyUp},
 		"backspace": {Code: tea.KeyBackspace},
-		"ctrl+r":    {Code: 'r', Mod: tea.ModCtrl},
 		"ctrl+c":    {Code: 'c', Mod: tea.ModCtrl},
 		"ctrl+u":    {Code: 'u', Mod: tea.ModCtrl},
 	}
@@ -237,54 +236,64 @@ func TestCloneFailureStaysOpen(t *testing.T) {
 	}
 }
 
-func TestCheckoutInClonedProject(t *testing.T) {
-	f := newFixture(t, nil)
-	f.press("kompose", "ctrl+r")
-	if f.view != viewPRs || f.prRepo != "Kompell/kompose" {
-		t.Fatalf("view=%v prRepo=%q", f.view, f.prRepo)
+// inRepo makes the fixture behave as if launched inside Kompell/kompose.
+func inRepo(startPR bool) func(*Options) {
+	return func(o *Options) {
+		o.Here = &o.Projects[0]
+		o.Cwd = filepath.Join(o.Projects[0].Path, "src")
+		o.StartPR = startPR
 	}
-	equal(t, "PR rows", f.names(), []string{"#7 Add thing"})
+}
 
-	f.press("enter")
-	dir := filepath.Join(f.root, "Kompell", "kompose")
-	equal(t, "checkouts", f.checked, []string{dir + " #7"})
-	if !f.quit || f.Result != dir {
-		t.Fatalf("quit=%v Result=%q", f.quit, f.Result)
+func TestPRViewExistsOnlyInsideARepo(t *testing.T) {
+	f := newFixture(t, nil)
+	for range 4 {
+		f.press("tab")
+		if f.view == viewPRs {
+			t.Fatal("tab reached the PR view outside a repo")
+		}
+	}
+	if strings.Contains(f.render(), "PRs") {
+		t.Fatalf("PR tab drawn outside a repo:\n%s", f.render())
+	}
+	for _, call := range f.ghCalls {
+		if strings.HasPrefix(call, "pr ") {
+			t.Fatalf("fetched pull requests outside a repo: %s", call)
+		}
+	}
+
+	f = newFixture(t, inRepo(false))
+	var seen []viewID
+	for range 3 {
+		f.press("tab")
+		seen = append(seen, f.view)
+	}
+	if seen[0] != viewAdd || seen[1] != viewPRs || seen[2] != viewProjects {
+		t.Fatalf("tab order inside a repo = %v", seen)
+	}
+	if !strings.Contains(f.render(), "PRs · Kompell/kompose") {
+		t.Fatalf("PR tab not drawn inside a repo:\n%s", f.render())
 	}
 }
 
 func TestCheckoutFromInsideTheRepoDoesNotMoveTheShell(t *testing.T) {
-	var dir string
-	f := newFixture(t, func(o *Options) {
-		dir = o.Projects[0].Path
-		o.Cwd = filepath.Join(dir, "src")
-		o.StartPR = &o.Projects[0]
-	})
+	f := newFixture(t, inRepo(true))
+	if f.view != viewPRs {
+		t.Fatalf("view = %v, want the PR view", f.view)
+	}
+	equal(t, "PR rows", f.names(), []string{"#7 Add thing"})
+
 	f.press("enter")
+	equal(t, "checkouts", f.checked, []string{filepath.Join(f.root, "Kompell", "kompose") + " #7"})
 	if !f.quit || f.Result != "" || !strings.Contains(f.Message, "checked out #7") {
 		t.Fatalf("quit=%v Result=%q Message=%q", f.quit, f.Result, f.Message)
 	}
 }
 
-func TestCheckoutOfUnclonedRepoClonesFirst(t *testing.T) {
-	f := newFixture(t, nil)
-	f.press("tab", "ctrl+r", "enter")
-	if f.prompt == nil || f.prompt.pr != 7 {
-		t.Fatalf("prompt = %+v", f.prompt)
-	}
-	f.press("enter")
-	target := filepath.Join(f.root, "Kompell", "claude")
-	equal(t, "clones", f.cloned, []string{"Kompell/claude -> " + target})
-	equal(t, "checkouts", f.checked, []string{target + " #7"})
-	if !f.quit || f.Result != target {
-		t.Fatalf("quit=%v Result=%q", f.quit, f.Result)
-	}
-}
-
 func TestCheckoutFailureLeavesYouInThePicker(t *testing.T) {
-	f := newFixture(t, nil)
+	f := newFixture(t, inRepo(true))
 	f.checkErr = errors.New("error: Your local changes would be overwritten\nAborting")
-	f.press("kompose", "ctrl+r", "enter")
+	f.press("enter")
 	if f.quit || f.Result != "" || !f.errorDetail() {
 		t.Fatalf("quit=%v Result=%q status=%q", f.quit, f.Result, f.status)
 	}
@@ -297,27 +306,12 @@ func TestCheckoutFailureLeavesYouInThePicker(t *testing.T) {
 	}
 }
 
-func TestEscLeavesPRsForTheViewItCameFrom(t *testing.T) {
-	f := newFixture(t, nil)
-	f.press("tab", "ctrl+r", "esc")
-	if f.view != viewAdd || f.quit {
-		t.Fatalf("view=%v quit=%v", f.view, f.quit)
+func TestCloneNeverChecksAnythingOut(t *testing.T) {
+	f := newFixture(t, inRepo(false))
+	f.press("tab", "enter", "enter")
+	if len(f.cloned) != 1 || len(f.checked) != 0 || !f.quit {
+		t.Fatalf("cloned=%v checked=%v quit=%v", f.cloned, f.checked, f.quit)
 	}
-}
-
-func TestPRsOfAProjectWithoutGitHubRemote(t *testing.T) {
-	f := newFixture(t, nil)
-	f.press("local", "ctrl+r")
-	if f.view != viewProjects || !f.statusErr {
-		t.Fatalf("view=%v status=%q", f.view, f.status)
-	}
-}
-
-func TestStalePRAnswerIsDropped(t *testing.T) {
-	f := newFixture(t, nil)
-	f.press("kompose", "ctrl+r")
-	f.send(prsMsg{seq: f.prSeq - 1, prs: []github.PR{{Number: 99, Title: "from another repo"}}})
-	equal(t, "PR rows", f.names(), []string{"#7 Add thing"})
 }
 
 func TestKeysAreIgnoredWhileBusyAndCtrlCCancels(t *testing.T) {
@@ -336,9 +330,9 @@ func TestKeysAreIgnoredWhileBusyAndCtrlCCancels(t *testing.T) {
 
 func TestRenderFitsTheTerminal(t *testing.T) {
 	for _, size := range [][2]int{{120, 30}, {60, 12}, {20, 5}, {200, 60}} {
-		f := newFixture(t, nil)
+		f := newFixture(t, inRepo(false))
 		f.send(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
-		for _, keys := range [][]string{nil, {"tab"}, {"ctrl+r"}, {"esc", "enter"}} {
+		for _, keys := range [][]string{nil, {"tab"}, {"tab"}, {"tab", "tab", "enter"}} {
 			f.press(keys...)
 			lines := strings.Split(f.render(), "\n")
 			if len(lines) != max(size[1], chrome+1) {

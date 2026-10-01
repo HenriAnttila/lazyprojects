@@ -73,22 +73,27 @@ func run() error {
 		CachePath: github.CachePath(),
 	}
 
+	// The repo you are standing in, wherever it is: it need not be under the
+	// root for its pull requests to be worth checking out.
+	top, topErr := projects.Toplevel(cwd)
+	if topErr == nil {
+		if here := projects.Load(cfg.Root, top); here.IsGitHub() {
+			opts.Here = &here
+		}
+	}
+
 	switch command {
 	case "", "projects":
 	case "add":
 		opts.StartAdd = true
 	case "pr":
-		// The repo you are standing in, wherever it is: it need not be under
-		// the root for its pull requests to be worth checking out.
-		top, err := projects.Toplevel(cwd)
-		if err != nil {
+		switch {
+		case topErr != nil:
 			return fmt.Errorf("pr: %s is not inside a git repo", cwd)
-		}
-		here := projects.Load(cfg.Root, top)
-		if !here.IsGitHub() {
+		case opts.Here == nil:
 			return fmt.Errorf("pr: %s has no GitHub remote", top)
 		}
-		opts.StartPR = &here
+		opts.StartPR = true
 	default:
 		fs.Usage()
 		return fmt.Errorf("unknown command %q", command)

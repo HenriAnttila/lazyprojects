@@ -1,13 +1,16 @@
 # pj
 
-A project manager for a directory of git repos. Three pickers share one layout
+A project manager for a directory of git repos. The views share one layout
 (filter on top, list left, preview right):
 
 | View | Shows | Enter |
 |---|---|---|
 | **Projects** | every git repo under the root | go there |
 | **Add** | your GitHub repos that are not cloned yet, last pushed first | clone, then go there |
-| **PRs** | open pull requests of one repo | check out (cloning first if needed) |
+| **PRs** | open pull requests of the repo you are in | check out |
+
+Projects and Add are about which project. PRs is about which branch of the one
+you are already in, so it only exists when pj is run inside a GitHub repo.
 
 Typing always filters. Rows containing what you typed come first in their
 original order; looser fuzzy matches follow.
@@ -51,7 +54,7 @@ Without either, pj prints the path.
 
     pj            projects
     pj add        start on the Add view
-    pj pr         pull requests of the repo you are standing in
+    pj pr         start on the PR view; errors outside a GitHub repo
 
 ## Keys
 
@@ -59,13 +62,12 @@ Without either, pj prints the path.
 |---|---|
 | type | filter |
 | `enter` | go / clone / check out |
-| `tab` | switch between Projects and Add |
-| `ctrl-r` | pull requests of the selected repo |
+| `tab` `shift-tab` | next / previous view |
 | `ctrl-o` | open in the browser |
 | `ctrl-y` | copy the URL |
 | `pgup` `pgdn` | scroll the preview |
 | `ctrl-u` | clear the filter |
-| `esc` | clear the filter, go back, or quit |
+| `esc` | clear the filter, or quit |
 | `ctrl-c` | cancel a running clone or checkout; otherwise quit |
 
 ## Code
@@ -74,4 +76,4 @@ Without either, pj prints the path.
     internal/projects  what is on disk; no UI, no network
     internal/github    repos, PRs and READMEs through gh; no UI
     internal/nav       the cd hand-off
-    internal/tui       Bubble Tea model: one picker component, three views
+    internal/tui       Bubble Tea model: one picker component, one per view

@@ -102,11 +102,10 @@ func (m *Model) tabs() string {
 		}
 		return sDim.Render(label)
 	}
-	prs := "PRs"
-	if m.prRepo != "" {
-		prs += " · " + m.prRepo
+	left := " " + tab(viewProjects, "Projects") + "   " + tab(viewAdd, "Add")
+	if here := m.opts.Here; here != nil {
+		left += "   " + tab(viewPRs, "PRs · "+here.Slug())
 	}
-	left := " " + tab(viewProjects, "Projects") + "   " + tab(viewAdd, "Add") + "   " + tab(viewPRs, prs)
 	right := sDim.Render(tilde(m.opts.Root)) + " "
 	gap := m.width - ansi.StringWidth(left) - ansi.StringWidth(right)
 	if gap < 2 {
@@ -240,9 +239,6 @@ func (m *Model) previewText(width int) string {
 		}
 		facts = append(facts, "updated "+ago(age(pr.UpdatedAt, now)))
 		b.WriteString(sDim.Render(strings.Join(facts, " · ")) + "\n")
-		if m.prDir == "" {
-			b.WriteString(sWarn.Render("not cloned: enter clones the repo first") + "\n")
-		}
 		b.WriteString("\n" + sep + "\n\n")
 		if strings.TrimSpace(pr.Body) == "" {
 			b.WriteString(sDim.Render("(no description)"))
@@ -256,9 +252,6 @@ func (m *Model) previewText(width int) string {
 func (m *Model) promptLines() []string {
 	p := m.prompt
 	what := "Clone " + sBold.Render(p.slug)
-	if p.pr != 0 {
-		what += fmt.Sprintf(" and check out #%d", p.pr)
-	}
 	shown := make([]string, len(p.options))
 	for i, o := range p.options {
 		if o == "" {
@@ -297,11 +290,11 @@ func (m *Model) hints() string {
 	case m.prompt != nil:
 		keys = []string{"enter clone", "tab next container", "esc cancel"}
 	case m.view == viewProjects:
-		keys = []string{"enter go", "tab add", "ctrl-r PRs", "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc quit"}
+		keys = []string{"enter go", "tab next view", "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc quit"}
 	case m.view == viewAdd:
-		keys = []string{"enter clone", "tab projects", "ctrl-r PRs", "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc quit"}
+		keys = []string{"enter clone", "tab next view", "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc quit"}
 	default:
-		keys = []string{"enter checkout", "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc back"}
+		keys = []string{"enter checkout", "tab next view", "ctrl-o browser", "ctrl-y copy URL", "pgup/pgdn scroll", "esc quit"}
 	}
 	return " " + sDim.Render(strings.Join(keys, "   "))
 }

@@ -1,8 +1,12 @@
-// Package tui is the interface: three pickers sharing one layout.
+// Package tui is the interface: pickers sharing one layout.
 //
 //	Projects  what is on disk under the root      enter: go there
 //	Add       GitHub repos not cloned yet         enter: clone, then go there
-//	PRs       open pull requests of one repo      enter: check out
+//	PRs       open pull requests of the repo the  enter: check out
+//	          shell is in; absent anywhere else
+//
+// Projects and Add are about which project; PRs is about which branch of the
+// one you are already in, which is why it only exists there.
 //
 // Typing always filters, as in fzf, so every action is Enter, Tab or a ctrl
 // chord. The model follows Bubble Tea's Elm loop: Update handles one message
@@ -13,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -38,9 +43,11 @@ type Options struct {
 	// CachePath holds the repo list between runs; empty disables the cache.
 	CachePath string
 
-	// StartAdd opens on the Add view. StartPR opens on that project's PRs.
-	StartAdd bool
-	StartPR  *projects.Project
+	// Here is the GitHub repo the shell is standing in, or nil. The PR view
+	// exists only when it is set, and lists that repo's pull requests.
+	Here *projects.Project
+	// StartAdd opens on the Add view, StartPR on the PR view.
+	StartAdd, StartPR bool
 	// Notice is shown in the status line at launch.
 	Notice string
 
@@ -54,7 +61,6 @@ type Model struct {
 	width, height int
 
 	view viewID
-	back viewID // where esc returns to from the PR view
 	pick [3]picker
 
 	projects []projects.Project
@@ -64,12 +70,9 @@ type Model struct {
 	reposLoading bool
 	reposErr     error
 
-	prRepo    string // owner/name the PR view is showing
-	prDir     string // its clone on disk, or "" when it is not cloned
-	prs       []github.PR
+	prs       []github.PR // of opts.Here
 	prLoading bool
 	prErr     error
-	prSeq     int
 
 	previews map[string]string // git status and log, by project path
 	readmes  map[string]string // README markdown, by slug; "" means none
@@ -115,8 +118,8 @@ func New(opts Options) *Model {
 	}
 	m.rebuild()
 	switch {
-	case opts.StartPR != nil:
-		m.openPRs(opts.StartPR.Slug(), opts.StartPR.Path)
+	case opts.StartPR && opts.Here != nil:
+		m.view = viewPRs
 	case opts.StartAdd:
 		m.view = viewAdd
 	}
@@ -129,8 +132,9 @@ func (m *Model) Init() tea.Cmd {
 	for _, p := range m.projects {
 		cmds = append(cmds, dirtyCmd(p.Path))
 	}
-	if m.view == viewPRs {
-		cmds = append(cmds, m.prsCmd(m.prSeq, m.prRepo))
+	if m.opts.Here != nil {
+		m.prLoading = true
+		cmds = append(cmds, m.prsCmd())
 	}
 	return tea.Batch(cmds...)
 }
@@ -163,9 +167,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case prsMsg:
-		if msg.seq != m.prSeq {
-			break // an answer for a repo the user has already left
-		}
 		m.prLoading, m.prErr, m.prs = false, msg.err, msg.prs
 		m.rebuild()
 		return m, m.hover()
@@ -233,17 +234,12 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 	}
 
 	before := m.cur().selectedKey()
-	var cmd tea.Cmd
 	switch k {
 	case "esc":
-		switch {
-		case m.cur().query != "":
-			m.cur().setQuery("")
-		case m.view == viewPRs:
-			m.view = m.back
-		default:
+		if m.cur().query == "" {
 			return tea.Quit
 		}
+		m.cur().setQuery("")
 	case "up", "ctrl+p":
 		m.cur().move(-1)
 	case "down", "ctrl+n":
@@ -254,20 +250,14 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 	case "pgdown":
 		m.scroll += m.bodyHeight() / 2
 		return nil
-	case "tab", "shift+tab":
-		switch m.view {
-		case viewProjects:
-			m.view = viewAdd
-		case viewAdd:
-			m.view = viewProjects
-		case viewPRs:
-			m.view = m.back
-		}
+	case "tab":
+		m.cycle(1)
+		return m.hover()
+	case "shift+tab":
+		m.cycle(-1)
 		return m.hover()
 	case "enter":
 		return m.enter()
-	case "ctrl+r":
-		cmd = m.pullRequests()
 	case "ctrl+o":
 		return m.browse()
 	case "ctrl+y":
@@ -290,13 +280,21 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 			m.cur().setQuery(m.cur().query + text)
 		}
 	}
-	if cmd != nil {
-		return cmd
-	}
 	if m.cur().selectedKey() != before {
 		return m.hover()
 	}
 	return nil
+}
+
+// cycle moves between the views that exist: Projects and Add always, PRs only
+// inside a GitHub repo.
+func (m *Model) cycle(delta int) {
+	views := []viewID{viewProjects, viewAdd}
+	if m.opts.Here != nil {
+		views = append(views, viewPRs)
+	}
+	i := slices.Index(views, m.view)
+	m.view = views[(i+delta+len(views))%len(views)]
 }
 
 // typed is the text a keypress inserts, or "" for a key that is not text.
@@ -349,18 +347,11 @@ func (m *Model) enter() tea.Cmd {
 		m.Result = r.key
 		return tea.Quit
 	case viewAdd:
-		m.openPrompt(r.key, 0)
+		m.openPrompt(r.key)
 	case viewPRs:
-		pr, ok := m.pr(r.key)
-		if !ok {
-			return nil
+		if pr, ok := m.pr(r.key); ok {
+			return m.checkout(m.opts.Here.Path, pr.Number)
 		}
-		if m.prDir == "" {
-			// Not on disk yet: clone first, then check the PR out in the clone.
-			m.openPrompt(m.prRepo, pr.Number)
-			return nil
-		}
-		return m.checkout(m.prDir, pr.Number)
 	}
 	return nil
 }
@@ -400,46 +391,9 @@ func (m *Model) cloned(msg cloneMsg) tea.Cmd {
 	}
 	m.projects = append(m.projects, projects.Load(m.opts.Root, p.target))
 	m.rebuild()
-	if p.pr != 0 {
-		m.prDir = p.target
-		return m.checkout(p.target, p.pr)
-	}
 	m.Message = fmt.Sprintf("cloned %s into %s", p.slug, p.target)
 	m.Result = p.target
 	return tea.Quit
-}
-
-// pullRequests opens the PR view for the selected repo.
-func (m *Model) pullRequests() tea.Cmd {
-	r, ok := m.cur().selected()
-	if !ok {
-		return nil
-	}
-	switch m.view {
-	case viewProjects:
-		p, _ := m.project(r.key)
-		if !p.IsGitHub() {
-			m.fail(fmt.Errorf("%s has no GitHub remote", p.Rel))
-			return nil
-		}
-		m.openPRs(p.Slug(), p.Path)
-	case viewAdd:
-		m.openPRs(r.key, "")
-	default:
-		return nil
-	}
-	return tea.Batch(m.prsCmd(m.prSeq, m.prRepo), m.hover())
-}
-
-func (m *Model) openPRs(slug, dir string) {
-	if m.view != viewPRs {
-		m.back = m.view
-	}
-	m.view = viewPRs
-	m.prRepo, m.prDir = slug, dir
-	m.prs, m.prErr, m.prLoading = nil, nil, true
-	m.prSeq++
-	m.pick[viewPRs] = picker{}
 }
 
 func (m *Model) browse() tea.Cmd {
@@ -458,7 +412,7 @@ func (m *Model) browse() tea.Cmd {
 	case viewAdd:
 		return m.browseCmd("repo", "view", r.key, "--web")
 	default:
-		return m.browseCmd("pr", "view", r.key, "-R", m.prRepo, "--web")
+		return m.browseCmd("pr", "view", r.key, "-R", m.opts.Here.Slug(), "--web")
 	}
 }
 
